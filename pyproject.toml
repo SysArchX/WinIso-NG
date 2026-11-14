@@ -1,3 +1,74 @@
 [build-system]
-requires = ["setuptools>=42"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "winiso-ng"
+dynamic = ["version"]
+description = "Create bootable Windows USB installers from an ISO image or a real DVD (Rufus-style GUI)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "GPL-3.0-or-later" }
+authors = [
+    { name = "SysArchX", email = "354081608+SysArchX@users.noreply.github.com" },
+]
+keywords = ["windows", "usb", "bootable", "rufus", "installer", "iso"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: GTK",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: System :: Installation/Setup",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "termcolor",
+    "wxPython>=4.2",
+]
+
+[project.optional-dependencies]
+dev = ["build", "twine"]
+
+[project.urls]
+Homepage = "https://github.com/SysArchX/WinIso-NG"
+"Bug Tracker" = "https://github.com/SysArchX/WinIso-NG/issues"
+"Source Code" = "https://github.com/SysArchX/WinIso-NG"
+
+[project.scripts]
+winiso = "WinIso.core:run"
+
+[project.gui-scripts]
+winisogui = "WinIso.gui:run"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["WinIso*"]
+
+[tool.setuptools.package-data]
+WinIso = [
+    "data/*",
+    "data/fonts/*",
+    "locale/*/LC_MESSAGES/*.mo",
+    "locale/*/LC_MESSAGES/*.po",
+]
+
+[tool.setuptools.data-files]
+"share/applications" = ["miscellaneous/WinIso-NG.desktop"]
+"share/polkit-1/actions" = ["miscellaneous/com.github.winiso.winiso-ng.policy"]
+"share/icons/hicolor/scalable/apps" = ["src/WinIso/data/winiso-logo.png"]
+"share/fonts/truetype/winiso-ng" = [
+    "src/WinIso/data/fonts/Orbitron.ttf",
+    "src/WinIso/data/fonts/Rajdhani-Bold.ttf",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "WinIso.miscellaneous.__version__" }

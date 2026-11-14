@@ -5,7 +5,7 @@ Priority: optional
 Architecture: all
 Maintainer: SysArchX <354081608+SysArchX@users.noreply.github.com>
 Homepage: https://github.com/SysArchX/WinIso-NG
-Depends: python3 (>= 3.6),
+Depends: python3 (>= 3.12),
          python3-wxgtk4.0,
          python3-termcolor,
          p7zip-full,
@@ -15,6 +15,7 @@ Depends: python3 (>= 3.6),
          e2fsprogs,
          util-linux,
          coreutils,
+         wimtools,
          grub2-common | grub-common
 Recommends: exfatprogs,
             udftools,
@@ -32,6 +33,11 @@ Description: create bootable Windows and Linux USB installers (Rufus-style GUI)
   * FAT32, NTFS, exFAT and UDF target filesystems with selectable cluster size
   * Quick format, destructive bad blocks check and image checksums
     (MD5, SHA-1, SHA-256, SHA-512)
-  * Legacy BIOS boot through GRUB, native UEFI boot and UEFI:NTFS support for
-    images whose install.wim exceeds the FAT32 4 GiB file size limit
+  * Legacy BIOS boot through GRUB, native UEFI boot and UEFI:NTFS support
+  * Automatic install.wim splitting with wimlib-imagex, so images larger than
+    4 GiB work on strictly FAT32 targets
+  * Windows 11 compatibility bypass (TPM, Secure Boot, RAM and local account)
+    written as autounattend.xml on the installation partition
+  * Host disk protection: /, /boot, /boot/efi, /home and swap disks are always
+    hidden from the device list
   * Live log window and inline progress reporting

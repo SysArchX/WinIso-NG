@@ -37,8 +37,8 @@ find "$STAGE/usr/lib/python3/dist-packages" -name '__pycache__' -type d -prune -
 find "$STAGE/usr/lib/python3/dist-packages" -name '*.pyc' -delete
 
 # ---------------------------------------------------------------- launchers
-install -m 0755 WinIso/winiso "$STAGE/usr/bin/winiso"
-install -m 0755 WinIso/winisogui "$STAGE/usr/bin/winisogui"
+install -m 0755 packaging/launchers/winiso "$STAGE/usr/bin/winiso"
+install -m 0755 packaging/launchers/winisogui "$STAGE/usr/bin/winisogui"
 
 # ---------------------------------------------------------------- data files
 install -m 0644 miscellaneous/WinIso-NG.desktop "$STAGE/usr/share/applications/"
@@ -63,6 +63,13 @@ cat > "$STAGE/usr/share/doc/$PKG/changelog" <<EOF
 winiso-ng (${VERSION}) unstable; urgency=medium
 
   * Rufus-style interface with the WinIso-NG neon theme.
+  * Windows 11 compatibility bypass (TPM, Secure Boot, RAM and local account)
+    through a generated autounattend.xml.
+  * Automatic splitting of install.wim into .swm parts with wimlib-imagex, so
+    strictly FAT32 targets work with modern Windows images.
+  * Host disk protection: disks backing /, /boot, /boot/efi, /home or swap are
+    always hidden, even with "List USB Hard Drives" enabled.
+  * Target confirmation dialog showing model, size and device path.
   * Adds DD image mode, non-bootable format mode, GPT partition tables,
     exFAT/UDF filesystems, cluster size selection, bad blocks check and
     MD5/SHA-1/SHA-256/SHA-512 image checksums.

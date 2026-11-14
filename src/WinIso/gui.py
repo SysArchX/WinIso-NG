@@ -406,7 +406,8 @@ class WinIso_handler(threading.Thread):
             self.log_sink(text)
 
     def __init__(self, source, target, filesystem, label, partition_scheme, target_system,
-                 image_mode, cluster_size, quick_format, bad_blocks_check, skip_legacy_bootloader):
+                 image_mode, cluster_size, quick_format, bad_blocks_check, skip_legacy_bootloader,
+                 win11_bypass=False):
         threading.Thread.__init__(self)
         self.daemon = True
 
@@ -422,6 +423,7 @@ class WinIso_handler(threading.Thread):
         self.quick_format = quick_format
         self.bad_blocks_check = bad_blocks_check
         self.skip_legacy_bootloader = skip_legacy_bootloader
+        self.win11_bypass = win11_bypass
 
     def run(self):
         source_fs_mountpoint = target_fs_mountpoint = temp_directory = None
@@ -439,19 +441,20 @@ class WinIso_handler(threading.Thread):
                                cluster_size=self.cluster_size,
                                quick_format=self.quick_format,
                                bad_blocks_check=self.bad_blocks_check,
-                               skip_legacy_bootloader=self.skip_legacy_bootloader)
+                               skip_legacy_bootloader=self.skip_legacy_bootloader,
+                               win11_bypass=self.win11_bypass)
 
             (source_fs_mountpoint, target_fs_mountpoint, temp_directory, install_mode, source_media, target_media,
              workaround_bios_boot_flag, skip_legacy_bootloader, target_filesystem_type, filesystem_label, verbose,
              debug, parser, partition_scheme, target_system, image_mode, cluster_size, quick_format,
-             bad_blocks_check) = result
+             bad_blocks_check, win11_bypass) = result
 
             core.main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media, install_mode,
                       temp_directory, target_filesystem_type, workaround_bios_boot_flag, None,
                       skip_legacy_bootloader,
                       partition_scheme=partition_scheme, target_system=target_system, image_mode=image_mode,
                       filesystem_label=filesystem_label, cluster_size=cluster_size, quick_format=quick_format,
-                      bad_blocks_check=bad_blocks_check)
+                      bad_blocks_check=bad_blocks_check, win11_bypass=win11_bypass)
         except SystemExit:
             pass
         except Exception as error:
@@ -588,7 +591,7 @@ class MainPanel(theme.TechBackground):
         self.list_hard_drives.Bind(wx.EVT_CHECKBOX, lambda event: self.refresh_devices())
         add_grid_control(device_grid, self.list_hard_drives)
 
-        main_sizer.Add(device_grid, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 20 + LABEL_WIDTH + 10)
+        main_sizer.Add(device_grid, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 20)
         main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
 
         # ------------------------------------------------------------- boot selection
@@ -608,7 +611,7 @@ class MainPanel(theme.TechBackground):
         self.image_mode_choice = make_choice(self, [IMAGE_STANDARD, IMAGE_DD], IMAGE_STANDARD)
         add_grid_row(boot_grid, self, _("Image option"), self.image_mode_choice)
 
-        main_sizer.Add(boot_grid, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 20 + LABEL_WIDTH + 10)
+        main_sizer.Add(boot_grid, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 20)
         main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
 
         # ------------------------------------------------------------- format options
@@ -649,7 +652,19 @@ class MainPanel(theme.TechBackground):
         format_grid.Add((0, 0))
         format_grid.Add((0, 0))
 
-        main_sizer.Add(format_grid, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 20 + LABEL_WIDTH + 10)
+        self.win11_bypass = make_checkbox(
+            self, _("Windows 11 Compatibility Bypass (TPM / Secure Boot / Local Account)"), False)
+        self.win11_bypass.SetToolTip(_(
+            "Writes an autounattend.xml to the installer root that skips the TPM, Secure Boot and RAM "
+            "checks and lets you finish setup with a local account, without a network connection."))
+
+        main_sizer.Add(format_grid, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 20)
+
+        # Kept outside the grid so this long label cannot widen the whole form
+        bypass_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        bypass_sizer.Add((LABEL_WIDTH - 10, 0))
+        bypass_sizer.Add(self.win11_bypass, 1, wx.EXPAND)
+        main_sizer.Add(bypass_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 20)
         main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
 
         # ------------------------------------------------------------- status
@@ -779,9 +794,12 @@ class MainPanel(theme.TechBackground):
             filesystems = [self.filesystem_choice.GetString(index)
                            for index in range(self.filesystem_choice.GetCount())]
 
-            if info.get("install_wim_size", 0) > (2 ** 32) - 1 and "NTFS" in filesystems:
-                self.filesystem_choice.SetStringSelection("NTFS")
-                self.append_log(_("The image contains a file larger than 4 GiB, NTFS selected."))
+            if info.get("install_wim_size", 0) > (2 ** 32) - 1:
+                if "NTFS" in filesystems:
+                    self.filesystem_choice.SetStringSelection("NTFS")
+                    self.append_log(_("The image contains a file larger than 4 GiB, NTFS selected."))
+
+                self.append_log(_("FAT32 is still supported: install.wim will be split into .swm parts."))
             elif "FAT" in filesystems:
                 self.filesystem_choice.SetStringSelection("FAT")
 
@@ -814,6 +832,9 @@ class MainPanel(theme.TechBackground):
 
     def on_filesystem_changed(self, __):
         filesystem = self.filesystem_choice.GetValue()
+
+        if filesystem == "FAT" and self.image_info and self.image_info.get("install_wim_size", 0) > (2 ** 32) - 1:
+            self.append_log(_("install.wim is larger than 4 GiB: it will be split with wimlib-imagex for FAT32."))
 
         if filesystem == "FAT":
             self.cluster_choice.SetItems(["Default", "512", "1024", "2048", "4096", "8192", "16384", "32768"])
@@ -883,10 +904,22 @@ class MainPanel(theme.TechBackground):
 
         message = _("Are you sure? This will delete all your files and wipe out the selected device.")
 
+        details = list_devices.device_details(device)
+        summary = _("Target device: {0}\nModel: {1}\nSize: {2}").format(
+            device,
+            details.get("model") or _("unknown model"),
+            details.get("size") or _("unknown size"))
+
+        message = summary + "\n\n" + message
+
+        if self.win11_bypass.GetValue() and image_mode != "NONE":
+            message += "\n\n" + _("An autounattend.xml with the Windows 11 bypass will be written to the target.")
+
         if self.bad_blocks.GetValue():
             message += "\n\n" + _("The bad blocks check also destroys all data on the device.")
 
-        if wx.MessageBox(message, _("Cancel"), wx.YES_NO | wx.ICON_WARNING | wx.NO_DEFAULT, self) != wx.YES:
+        if wx.MessageBox(message, _("Confirm target device"),
+                         wx.YES_NO | wx.ICON_WARNING | wx.NO_DEFAULT, self) != wx.YES:
             return
 
         filesystem = self.filesystem_choice.GetValue()
@@ -902,7 +935,8 @@ class MainPanel(theme.TechBackground):
             cluster_size=self.cluster_choice.GetValue(),
             quick_format=self.quick_format.GetValue(),
             bad_blocks_check=self.bad_blocks.GetValue(),
-            skip_legacy_bootloader=self.__parent.options_skip_grub.IsChecked())
+            skip_legacy_bootloader=self.__parent.options_skip_grub.IsChecked(),
+            win11_bypass=self.win11_bypass.GetValue())
 
         self.handler.log_sink = self.append_log
 
@@ -925,7 +959,8 @@ class MainPanel(theme.TechBackground):
         for control in (self.device_choice, self.boot_choice, self.image_mode_choice, self.select_button,
                         self.checksum_button, self.scheme_choice, self.target_system_choice,
                         self.filesystem_choice, self.cluster_choice, self.label_field,
-                        self.quick_format, self.bad_blocks, self.list_hard_drives):
+                        self.quick_format, self.bad_blocks, self.list_hard_drives,
+                        self.win11_bypass):
             control.Enable(not installing)
 
         if not installing:

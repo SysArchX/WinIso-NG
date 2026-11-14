@@ -37,11 +37,20 @@ current_state = 'pre-init'
 
 gui = None
 
+#: FAT32 cannot store a single file bigger than 4 GiB - 1 byte
+FAT32_MAX_FILE_SIZE = (2 ** 32) - 1
+
+#: Size of each part produced by ``wimlib-imagex split`` for FAT32 targets
+WIM_SPLIT_PART_SIZE_MIB = 3800
+
+#: Name of the answer file used by the Windows 11 compatibility bypass
+AUTOUNATTEND_FILENAME = "autounattend.xml"
+
 
 def init(from_cli=True, install_mode=None, source_media=None, target_media=None, workaround_bios_boot_flag=False,
          target_filesystem_type="FAT", filesystem_label=DEFAULT_NEW_FS_LABEL, partition_scheme="MBR",
          target_system="BIOS", image_mode="ISO", cluster_size="Default", quick_format=True,
-         bad_blocks_check=False, skip_legacy_bootloader=False):
+         bad_blocks_check=False, skip_legacy_bootloader=False, win11_bypass=False):
     """
     :param from_cli:
     :type from_cli: bool
@@ -116,6 +125,8 @@ def init(from_cli=True, install_mode=None, source_media=None, target_media=None,
 
         bad_blocks_check = args.bad_blocks
 
+        win11_bypass = args.win11_bypass
+
         verbose = args.verbose
 
         no_color = args.no_color
@@ -128,13 +139,14 @@ def init(from_cli=True, install_mode=None, source_media=None, target_media=None,
 
     return [source_fs_mountpoint, target_fs_mountpoint, temp_directory, install_mode, source_media, target_media,
             workaround_bios_boot_flag, skip_legacy_bootloader, target_filesystem_type, filesystem_label, verbose, debug,
-            parser, partition_scheme, target_system, image_mode, cluster_size, quick_format, bad_blocks_check]
+            parser, partition_scheme, target_system, image_mode, cluster_size, quick_format, bad_blocks_check,
+            win11_bypass]
 
 
 def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media, install_mode, temp_directory,
          target_filesystem_type, workaround_bios_boot_flag, parser=None, skip_legacy_bootloader=False,
          partition_scheme="MBR", target_system="BIOS", image_mode="ISO", filesystem_label=DEFAULT_NEW_FS_LABEL,
-         cluster_size="Default", quick_format=True, bad_blocks_check=False):
+         cluster_size="Default", quick_format=True, bad_blocks_check=False, win11_bypass=False):
     """
     :param parser:
     :param source_fs_mountpoint:
@@ -196,6 +208,8 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
         return 0
 
     # ---------------------------------------------------------------- source
+    split_wim_for_fat32 = False
+
     if image_mode != "NONE":
         current_state = "start-mounting"
 
@@ -203,9 +217,14 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
             utils.print_with_color(_("Error: Unable to mount source filesystem"), "red")
             return 1
 
-        if target_filesystem_type == "FAT":
-            if utils.check_fat32_filesize_limitation(source_fs_mountpoint):
-                target_filesystem_type = "NTFS"
+        # FAT32 stays usable: install.wim is split into .swm parts instead of
+        # silently switching the whole target to NTFS.
+        if target_filesystem_type in ("FAT", "VFAT") and utils.check_fat32_filesize_limitation(
+                source_fs_mountpoint, quiet=True):
+            split_wim_for_fat32 = True
+            utils.print_with_color(_(
+                "The source image contains a file larger than 4 GiB: install.wim will be split into "
+                "install*.swm parts so the target can stay FAT32."), "yellow")
     else:
         utils.print_with_color(_("Creating an empty, non-bootable storage device"))
 
@@ -234,14 +253,14 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
 
         utils.check_target_partition(target_partition, target_device)
 
-        # An existing FAT32 partition simply cannot store the >4GiB install.wim that modern
-        # Windows images ship, so bail out with a clear instruction instead of failing mid-copy.
+        # An existing FAT32 partition cannot store the >4GiB install.wim that modern
+        # Windows images ship, so split it while copying instead of failing mid-copy.
         if utils.get_filesystem_type(target_partition) == "vfat" and utils.check_fat32_filesize_limitation(
                 source_fs_mountpoint, quiet=True):
+            split_wim_for_fat32 = True
             utils.print_with_color(_(
-                "Error: The target partition is formatted as FAT32 and the source image contains a file larger than 4 GiB. "
-                "Recreate the device with the --device creation method and --target-filesystem NTFS instead."), "red")
-            return 1
+                "The target partition is FAT32 and the source image contains a file larger than 4 GiB: "
+                "install.wim will be split into install*.swm parts."), "yellow")
 
     if image_mode == "NONE":
         current_state = "finished"
@@ -255,9 +274,19 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
     if utils.check_target_filesystem_free_space(target_fs_mountpoint, source_fs_mountpoint, target_partition):
         return 1
 
+    if split_wim_for_fat32:
+        current_state = "splitting-wim"
+
+        if split_install_wim(source_fs_mountpoint, target_fs_mountpoint):
+            return 1
+
     current_state = "copying-filesystem"
 
-    copy_filesystem_files(source_fs_mountpoint, target_fs_mountpoint)
+    copy_filesystem_files(source_fs_mountpoint, target_fs_mountpoint, skip_oversized_wim=split_wim_for_fat32)
+
+    if win11_bypass:
+        if write_autounattend(target_fs_mountpoint):
+            return 1
 
     workaround.support_windows_7_uefi_boot(source_fs_mountpoint, target_fs_mountpoint)
 
@@ -408,6 +437,189 @@ def write_raw_image(source_media, target_device):
         gui.progress = False
 
     utils.print_with_color(_("Image written successfully"), "green")
+    return 0
+
+
+def _relay_process_output(process, prefix=""):
+    """Print the output of a child process live and keep it in the GUI log."""
+    for raw_line in iter(process.stdout.readline, b""):
+        line = raw_line.decode("utf-8", "replace").strip()
+        if line == "":
+            continue
+
+        utils.print_with_color(prefix + line)
+
+        if gui is not None:
+            gui.state = prefix + line
+
+
+def install_wim_path(source_fs_mountpoint):
+    """Path of sources/install.wim inside a mounted source image."""
+    return os.path.join(source_fs_mountpoint, "sources", "install.wim")
+
+
+def is_oversized_install_wim(path):
+    """True for a sources/install.wim that does not fit into FAT32."""
+    if os.path.basename(path).lower() != "install.wim":
+        return False
+
+    try:
+        return os.path.getsize(path) > FAT32_MAX_FILE_SIZE
+    except OSError:
+        return False
+
+
+def needs_wim_split(source_fs_mountpoint):
+    """True when install.wim has to be split for a FAT32 target."""
+    return is_oversized_install_wim(install_wim_path(source_fs_mountpoint))
+
+
+def find_wim_split_command():
+    """Return the wimlib split command line prefix, or None when it is missing."""
+    tool = shutil.which("wimlib-imagex")
+    if tool is not None:
+        return [tool, "split"]
+
+    tool = shutil.which("wimsplit")
+    if tool is not None:
+        return [tool]
+
+    return None
+
+
+def split_install_wim(source_fs_mountpoint, target_fs_mountpoint, part_size_mib=WIM_SPLIT_PART_SIZE_MIB):
+    """Split sources/install.wim into install*.swm parts so FAT32 can hold it.
+
+    :param source_fs_mountpoint: Mounted source image
+    :param target_fs_mountpoint: Mounted target partition
+    :param part_size_mib: Maximum size of each .swm part, in MiB
+    :return: 0 - success or nothing to do; 1 - failure
+    """
+    utils.check_kill_signal()
+
+    source = install_wim_path(source_fs_mountpoint)
+    install_esd = os.path.join(source_fs_mountpoint, "sources", "install.esd")
+
+    if not os.path.isfile(source):
+        if os.path.isfile(install_esd) and os.path.getsize(install_esd) > FAT32_MAX_FILE_SIZE:
+            utils.print_with_color(_(
+                "Error: The image ships an oversized install.esd, which cannot be split. "
+                "Use NTFS, exFAT or UDF as the target filesystem instead."), "red")
+            return 1
+
+        return 0
+
+    if not is_oversized_install_wim(source):
+        utils.print_with_color(_("install.wim fits into FAT32, no split required."))
+        return 0
+
+    command = find_wim_split_command()
+
+    if command is None:
+        utils.print_with_color(_(
+            "Error: install.wim is larger than 4 GiB and wimlib-imagex is not installed. "
+            "Install the wimtools package, or choose NTFS, exFAT or UDF as the target filesystem."), "red")
+        return 1
+
+    target_directory = os.path.join(target_fs_mountpoint, "sources")
+
+    try:
+        os.makedirs(target_directory, exist_ok=True)
+    except OSError as error:
+        utils.print_with_color(_("Error: Unable to create {0}: {1}").format(target_directory, error), "red")
+        return 1
+
+    target = os.path.join(target_directory, "install.swm")
+
+    utils.print_with_color(_("Splitting install.wim into install*.swm parts of {0} MiB...").format(
+        part_size_mib), "green")
+
+    process = subprocess.Popen(command + [source, target, str(part_size_mib)],
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    _relay_process_output(process)
+    process.wait()
+
+    if process.returncode != 0:
+        utils.print_with_color(_("Error: wimlib-imagex was unable to split install.wim."), "red")
+        return 1
+
+    if not os.path.isfile(target):
+        utils.print_with_color(_("Error: install.swm was not created."), "red")
+        return 1
+
+    utils.print_with_color(_("install.wim was split successfully, the FAT32 target can boot now."), "green")
+    return 0
+
+
+def build_autounattend_xml():
+    """Build a valid autounattend.xml that bypasses the Windows 11 requirements."""
+    return """<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+    <settings pass="windowsPE">
+        <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <RunSynchronous>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>1</Order>
+                    <Description>Bypass TPM check</Description>
+                    <Path>reg add HKLM\\SYSTEM\\Setup\\LabConfig /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>2</Order>
+                    <Description>Bypass Secure Boot check</Description>
+                    <Path>reg add HKLM\\SYSTEM\\Setup\\LabConfig /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>3</Order>
+                    <Description>Bypass RAM check</Description>
+                    <Path>reg add HKLM\\SYSTEM\\Setup\\LabConfig /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>4</Order>
+                    <Description>Bypass CPU check</Description>
+                    <Path>reg add HKLM\\SYSTEM\\Setup\\LabConfig /v BypassCPUCheck /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>5</Order>
+                    <Description>Bypass storage check</Description>
+                    <Path>reg add HKLM\\SYSTEM\\Setup\\LabConfig /v BypassStorageCheck /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+            </RunSynchronous>
+        </component>
+    </settings>
+    <settings pass="specialize">
+        <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+            <RunSynchronous>
+                <RunSynchronousCommand wcm:action="add">
+                    <Order>1</Order>
+                    <Description>Bypass network requirement for a local account</Description>
+                    <Path>reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\OOBE /v BypassNRO /t REG_DWORD /d 1 /f</Path>
+                </RunSynchronousCommand>
+            </RunSynchronous>
+        </component>
+    </settings>
+</unattend>
+"""
+
+
+def write_autounattend(target_fs_mountpoint):
+    """Write autounattend.xml into the root of the target partition.
+
+    :param target_fs_mountpoint: Mounted target partition
+    :return: 0 - success; 1 - failure
+    """
+    utils.check_kill_signal()
+
+    path = os.path.join(target_fs_mountpoint, AUTOUNATTEND_FILENAME)
+
+    try:
+        with open(path, "w", encoding="utf-8", newline="\r\n") as handle:
+            handle.write(build_autounattend_xml())
+    except OSError as error:
+        utils.print_with_color(_("Error: Unable to write {0}: {1}").format(path, error), "red")
+        return 1
+
+    utils.print_with_color(_("Windows 11 compatibility bypass written to {0}").format(path), "green")
     return 0
 
 
@@ -754,12 +966,13 @@ def mount_target_filesystem(target_partition, target_fs_mountpoint):
         return 1
 
 
-def copy_filesystem_files(source_fs_mountpoint, target_fs_mountpoint):
+def copy_filesystem_files(source_fs_mountpoint, target_fs_mountpoint, skip_oversized_wim=False):
     """
     Copying all files from one filesystem to another, with progress reporting
 
     :param source_fs_mountpoint:
     :param target_fs_mountpoint:
+    :param skip_oversized_wim: Leave the >4 GiB install.wim out, it is written as .swm parts instead
     :return: None
     """
     global CopyFiles_handle
@@ -785,6 +998,11 @@ def copy_filesystem_files(source_fs_mountpoint, target_fs_mountpoint):
         for file in filenames:
             path = os.path.join(dirpath, file)
             CopyFiles_handle.file = path
+
+            if skip_oversized_wim and is_oversized_install_wim(path):
+                utils.print_with_color(_("Skipped {0}: it was written as install*.swm parts").format(
+                    path.replace(source_fs_mountpoint, "")), "yellow")
+                continue
 
             if os.path.getsize(path) > 5 * 1024 * 1024:  # Files bigger than 5 MiB
                 copy_large_file(path, target_fs_mountpoint + path.replace(source_fs_mountpoint, ""))
@@ -975,6 +1193,9 @@ def setup_arguments():
                         help="Run a destructive one pass bad blocks check on the device before writing.")
     parser.add_argument("--no-quick-format", action="store_true",
                         help="Do a full format instead of a quick one when the filesystem tool supports it.")
+    parser.add_argument("--win11-bypass", action="store_true",
+                        help="Write an autounattend.xml that bypasses the Windows 11 TPM / Secure Boot "
+                             "checks and the Microsoft account requirement (BypassNRO).")
     parser.add_argument('--for-gui', action="store_true", help=argparse.SUPPRESS)
 
     return parser
@@ -1040,14 +1261,15 @@ def run():
         install_mode, source_media, target_media, \
         workaround_bios_boot_flag, skip_legacy_bootloader, target_filesystem_type, \
         filesystem_label, verbose, debug, parser, \
-        partition_scheme, target_system, image_mode, cluster_size, quick_format, bad_blocks_check = result
+        partition_scheme, target_system, image_mode, cluster_size, quick_format, bad_blocks_check, \
+        win11_bypass = result
 
     try:
         main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media, install_mode, temp_directory,
              target_filesystem_type, workaround_bios_boot_flag, parser, skip_legacy_bootloader,
              partition_scheme=partition_scheme, target_system=target_system, image_mode=image_mode,
              filesystem_label=filesystem_label, cluster_size=cluster_size, quick_format=quick_format,
-             bad_blocks_check=bad_blocks_check)
+             bad_blocks_check=bad_blocks_check, win11_bypass=win11_bypass)
     except KeyboardInterrupt:
         pass
     except Exception as error:
