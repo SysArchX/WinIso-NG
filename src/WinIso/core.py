@@ -39,7 +39,9 @@ gui = None
 
 
 def init(from_cli=True, install_mode=None, source_media=None, target_media=None, workaround_bios_boot_flag=False,
-         target_filesystem_type="FAT", filesystem_label=DEFAULT_NEW_FS_LABEL):
+         target_filesystem_type="FAT", filesystem_label=DEFAULT_NEW_FS_LABEL, partition_scheme="MBR",
+         target_system="BIOS", image_mode="ISO", cluster_size="Default", quick_format=True,
+         bad_blocks_check=False, skip_legacy_bootloader=False):
     """
     :param from_cli:
     :type from_cli: bool
@@ -102,6 +104,18 @@ def init(from_cli=True, install_mode=None, source_media=None, target_media=None,
 
         filesystem_label = args.label
 
+        partition_scheme = args.partition_scheme
+
+        target_system = args.target_system
+
+        image_mode = args.image_mode
+
+        cluster_size = args.cluster_size
+
+        quick_format = not args.no_quick_format
+
+        bad_blocks_check = args.bad_blocks
+
         verbose = args.verbose
 
         no_color = args.no_color
@@ -112,15 +126,15 @@ def init(from_cli=True, install_mode=None, source_media=None, target_media=None,
     utils.verbose = verbose
     utils.gui = gui
 
-    if from_cli:
-        return [source_fs_mountpoint, target_fs_mountpoint, temp_directory, install_mode, source_media, target_media,
-                workaround_bios_boot_flag, skip_legacy_bootloader, target_filesystem_type, filesystem_label, verbose, debug, parser]
-    else:
-        return [source_fs_mountpoint, target_fs_mountpoint, temp_directory, target_media]
+    return [source_fs_mountpoint, target_fs_mountpoint, temp_directory, install_mode, source_media, target_media,
+            workaround_bios_boot_flag, skip_legacy_bootloader, target_filesystem_type, filesystem_label, verbose, debug,
+            parser, partition_scheme, target_system, image_mode, cluster_size, quick_format, bad_blocks_check]
 
 
 def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media, install_mode, temp_directory,
-         target_filesystem_type, workaround_bios_boot_flag, parser=None, skip_legacy_bootloader=False):
+         target_filesystem_type, workaround_bios_boot_flag, parser=None, skip_legacy_bootloader=False,
+         partition_scheme="MBR", target_system="BIOS", image_mode="ISO", filesystem_label=DEFAULT_NEW_FS_LABEL,
+         cluster_size="Default", quick_format=True, bad_blocks_check=False):
     """
     :param parser:
     :param source_fs_mountpoint:
@@ -141,6 +155,11 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
 
     current_state = 'enter-init'
 
+    image_mode = image_mode.upper()
+    partition_scheme = partition_scheme.upper()
+    target_system = target_system.upper()
+    target_filesystem_type = target_filesystem_type.upper()
+
     command_mkdosfs, command_mkntfs, command_grubinstall = utils.check_runtime_dependencies(application_name)
     if command_grubinstall == "grub-install":
         name_grub_prefix = "grub"
@@ -154,8 +173,7 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
         utils.print_with_color(_("Warning: You are not running {0} as root!").format(application_name), "yellow")
         utils.print_with_color(_("Warning: This might be the reason of the following failure."), "yellow")
 
-    if utils.check_runtime_parameters(install_mode, source_media, target_media):
-        parser.print_help()
+    if not _check_mode_parameters(install_mode, source_media, target_media, image_mode, parser):
         return 1
 
     target_device, target_partition = utils.determine_target_parameters(install_mode, target_media)
@@ -163,22 +181,44 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
     if utils.check_source_and_target_not_busy(install_mode, source_media, target_device, target_partition):
         return 1
 
-    current_state = "start-mounting"
+    # ---------------------------------------------------------------- bad blocks
+    if bad_blocks_check:
+        current_state = "checking-bad-blocks"
+        if run_bad_blocks_check(target_device):
+            return 1
 
-    if mount_source_filesystem(source_media, source_fs_mountpoint):
-        utils.print_with_color(_("Error: Unable to mount source filesystem"), "red")
-        return 1
+    # ---------------------------------------------------------------- DD mode
+    if image_mode == "DD":
+        current_state = "writing-raw-image"
+        if write_raw_image(source_media, target_device):
+            return 1
+        current_state = "finished"
+        return 0
 
-    if target_filesystem_type == "FAT":
-        if utils.check_fat32_filesize_limitation(source_fs_mountpoint):
-            target_filesystem_type = "NTFS"
+    # ---------------------------------------------------------------- source
+    if image_mode != "NONE":
+        current_state = "start-mounting"
 
+        if mount_source_filesystem(source_media, source_fs_mountpoint):
+            utils.print_with_color(_("Error: Unable to mount source filesystem"), "red")
+            return 1
+
+        if target_filesystem_type == "FAT":
+            if utils.check_fat32_filesize_limitation(source_fs_mountpoint):
+                target_filesystem_type = "NTFS"
+    else:
+        utils.print_with_color(_("Creating an empty, non-bootable storage device"))
+
+    # ---------------------------------------------------------------- partition
     if install_mode == "device":
         wipe_existing_partition_table_and_filesystem_signatures(target_device)
-        create_target_partition_table(target_device, "legacy")
-        create_target_partition(target_device, target_partition, target_filesystem_type, target_filesystem_type,
-                                command_mkdosfs,
-                                command_mkntfs)
+
+        if create_target_partition_table(target_device, partition_scheme):
+            return 1
+
+        if create_target_partition(target_device, target_partition, target_filesystem_type, filesystem_label,
+                                   command_mkdosfs, command_mkntfs, cluster_size, quick_format):
+            return 1
 
         utils.wait_for_block_device(target_partition)
 
@@ -187,6 +227,11 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
             install_uefi_ntfs_support_partition(utils.partition_node(target_device, 2), temp_directory)
 
     if install_mode == "partition":
+        if image_mode == "NONE":
+            utils.print_with_color(
+                _("Error: The non-bootable creation mode requires the --device creation method."), "red")
+            return 1
+
         utils.check_target_partition(target_partition, target_device)
 
         # An existing FAT32 partition simply cannot store the >4GiB install.wim that modern
@@ -198,6 +243,11 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
                 "Recreate the device with the --device creation method and --target-filesystem NTFS instead."), "red")
             return 1
 
+    if image_mode == "NONE":
+        current_state = "finished"
+        return 0
+
+    # ---------------------------------------------------------------- copy files
     if mount_target_filesystem(target_partition, target_fs_mountpoint):
         utils.print_with_color(_("Error: Unable to mount target filesystem"), "red")
         return 1
@@ -210,7 +260,16 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
     copy_filesystem_files(source_fs_mountpoint, target_fs_mountpoint)
 
     workaround.support_windows_7_uefi_boot(source_fs_mountpoint, target_fs_mountpoint)
-    if not skip_legacy_bootloader:
+
+    if skip_legacy_bootloader:
+        utils.print_with_color(_("Legacy GRUB bootloader installation skipped by request"), "yellow")
+    elif partition_scheme == "GPT":
+        utils.print_with_color(
+            _("Skipping legacy GRUB bootloader: a GPT target boots through UEFI only"), "yellow")
+    elif target_system.startswith("UEFI"):
+        utils.print_with_color(
+            _("Skipping legacy GRUB bootloader: the target system was set to UEFI only"), "yellow")
+    else:
         install_legacy_pc_bootloader_grub(target_fs_mountpoint, target_device, command_grubinstall)
 
         install_legacy_pc_bootloader_grub_config(target_fs_mountpoint, target_device, command_grubinstall, name_grub_prefix)
@@ -221,6 +280,180 @@ def main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media,
     current_state = "finished"
 
     return 0
+
+
+def _check_mode_parameters(install_mode, source_media, target_media, image_mode, parser):
+    """
+    Validate the source/target pair for the selected creation mode.
+
+    :return: True when the parameters look usable
+    """
+    if image_mode == "NONE":
+        if not os.path.exists(target_media):
+            utils.print_with_color(_("Error: Target media \"{0}\" not found!").format(target_media), "red")
+            return False
+        if install_mode == "device" and target_media[-1].isdigit():
+            utils.print_with_color(_("Error: Target media \"{0}\" is not an entire storage device!").format(target_media), "red")
+            return False
+        return True
+
+    if utils.check_runtime_parameters(install_mode, source_media, target_media):
+        if parser is not None:
+            parser.print_help()
+        return False
+
+    return True
+
+
+def run_bad_blocks_check(target_device):
+    """
+    Destructive read-write surface scan of the target device (one pass, like Rufus).
+
+    :param target_device: The device to test; its contents are destroyed
+    :return: 0 - no bad blocks; 1 - bad blocks found or the test failed
+    """
+    utils.print_with_color(_("Checking {0} for bad blocks, this destroys all data on it...").format(target_device), "green")
+
+    process = subprocess.Popen(["badblocks", "-wsv", target_device], stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT)
+
+    bad_blocks_found = False
+    for raw_line in iter(process.stdout.readline, b""):
+        line = raw_line.decode("utf-8", "replace").strip()
+        if line == "":
+            continue
+
+        utils.print_with_color(line)
+
+        if gui is not None:
+            gui.state = line
+
+        percentage = utils.extract_percentage(line)
+
+        if percentage is not None and gui is not None:
+            gui.progress = percentage
+        elif "bad blocks found" in line.lower() or "Pass completed" in line:
+            bad_blocks_found = bad_blocks_found or not line.startswith("0 bad blocks")
+
+    process.wait()
+
+    if gui is not None:
+        gui.progress = False
+
+    if process.returncode != 0:
+        utils.print_with_color(_("Error: The bad blocks check reported problems on this device."), "red")
+        return 1
+
+    return 0
+
+
+def write_raw_image(source_media, target_device):
+    """
+    Write an image byte-for-byte onto the target device (Rufus' DD image mode).
+
+    :param source_media: Image file or block device
+    :param target_device: Target block device
+    :return: 0 - success; 1 - failure
+    """
+    utils.print_with_color(_("Writing image to {0} in DD mode...").format(target_device), "green")
+
+    image_size = utils.get_media_size(source_media)
+
+    try:
+        source = open(source_media, "rb")
+    except OSError as error:
+        utils.print_with_color(_("Error: Unable to open {0}: {1}").format(source_media, error), "red")
+        return 1
+
+    try:
+        target = open(target_device, "wb")
+    except OSError as error:
+        source.close()
+        utils.print_with_color(_("Error: Unable to open {0}: {1}").format(target_device, error), "red")
+        return 1
+
+    written = 0
+
+    try:
+        with source, target:
+            while True:
+                utils.check_kill_signal()
+
+                data = source.read(4 * 1024 * 1024)
+                if data == b"":
+                    break
+
+                target.write(data)
+                written += len(data)
+
+                percentage = int(written * 100 / image_size) if image_size else 0
+                state = _("Writing image: {0} of {1}").format(
+                    utils.convert_to_human_readable_format(written),
+                    utils.convert_to_human_readable_format(image_size))
+
+                if gui is not None:
+                    gui.state = state
+                    gui.progress = min(99, percentage)
+                else:
+                    print(state + " (" + str(min(99, percentage)) + "%)")
+
+            target.flush()
+            os.fsync(target.fileno())
+    except (OSError, IOError) as error:
+        utils.print_with_color(_("Error: Unable to write the image: {0}").format(error), "red")
+        return 1
+
+    if gui is not None:
+        gui.progress = 100
+        gui.progress = False
+
+    utils.print_with_color(_("Image written successfully"), "green")
+    return 0
+
+
+def inspect_image(image_path):
+    """
+    Peek inside an image without mounting it to guess a few useful defaults.
+
+    :param image_path: ISO/IMG file
+    :return: Dict with is_windows, has_install_wim, install_wim_size and has_efi_boot
+    """
+    info = {"is_windows": False, "install_wim_size": 0, "has_efi_boot": False, "has_bootmgr": False}
+
+    if shutil.which("7z") is None or not os.path.isfile(image_path):
+        return info
+
+    try:
+        listing = subprocess.run(["7z", "l", "-slt", "-bd", image_path], stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL).stdout.decode("utf-8", "replace")
+    except OSError:
+        return info
+
+    current_path = ""
+    current_size = 0
+
+    for line in listing.splitlines():
+        line = line.strip()
+
+        if line.startswith("Path = "):
+            current_path = line[len("Path = "):].strip().replace("\\", "/").lower()
+            current_size = 0
+        elif line.startswith("Size = "):
+            try:
+                current_size = int(line[len("Size = "):].strip())
+            except ValueError:
+                current_size = 0
+
+            if current_path.endswith("sources/install.wim") or current_path.endswith("sources/install.esd"):
+                info["is_windows"] = True
+                info["install_wim_size"] = max(info["install_wim_size"], current_size)
+            elif current_path.endswith("bootmgr"):
+                info["is_windows"] = True
+                info["has_bootmgr"] = True
+            elif current_path.endswith("efi/boot/bootx64.efi") or current_path.endswith("efi/boot/bootia32.efi"):
+                info["has_efi_boot"] = True
+
+    return info
 
 
 def print_application_info():
@@ -275,34 +508,44 @@ def create_target_partition_table(target_device, partition_table_type):
     if partition_table_type in ["legacy", "msdos", "mbr", "pc"]:
         parted_partiton_table_argument = "msdos"
     elif partition_table_type in ["gpt", "guid"]:
-        utils.print_with_color(_("Error: Currently GUID partition table is not supported."), "red")
-        return 1
+        parted_partiton_table_argument = "gpt"
     else:
         utils.print_with_color(_("Error: Partition table not supported."), "red")
         return 1
 
     # Create partition table(and overwrite the old one, whatever it was)
-    subprocess.run(["parted", "--script", target_device, "mklabel", parted_partiton_table_argument])
+    if subprocess.run(["parted", "--script", target_device, "mklabel",
+                       parted_partiton_table_argument]).returncode != 0:
+        utils.print_with_color(_("Error: Unable to create the {0} partition table").format(
+            parted_partiton_table_argument), "red")
+        return 1
 
     return 0
 
 
 def create_target_partition(target_device, target_partition, filesystem_type, filesystem_label, command_mkdosfs,
-                            command_mkntfs):
+                            command_mkntfs, cluster_size="Default", quick_format=True):
     """
+    Create the data partition and format it.
+
     :param target_device:
     :param target_partition:
-    :param filesystem_type:
+    :param filesystem_type: FAT, NTFS, EXFAT or UDF
     :param filesystem_label:
     :param command_mkdosfs:
     :param command_mkntfs:
-    :return: 1,2 - failure
+    :param cluster_size: Cluster size in bytes, or "Default"
+    :param quick_format: Skip the full surface format when the filesystem tool supports it
+    :return: 0 - success; 1,2 - failure
     """
     utils.check_kill_signal()
 
-    if filesystem_type in ["FAT", "vfat"]:
+    filesystem = filesystem_type.upper()
+
+    if filesystem in ["FAT", "VFAT"]:
         parted_mkpart_fs_type = "fat32"
-    elif filesystem_type in ["NTFS", "ntfs"]:
+    elif filesystem in ["NTFS", "EXFAT", "UDF"]:
+        # parted uses the same Microsoft basic data partition type for these filesystems
         parted_mkpart_fs_type = "ntfs"
     else:
         utils.print_with_color(_("Error: Filesystem not supported"), "red")
@@ -318,45 +561,90 @@ def create_target_partition(target_device, target_partition, filesystem_type, fi
     # We start at 4MiB for grub (it needs a post-mbr gap for its code)
     # and alignment of flash memory block erase segment in general, for details see
     # http://www.gnu.org/software/grub/manual/grub.html#BIOS-installation and http://lwn.net/Articles/428584/
-    # If NTFS filesystem is used we leave a 512KiB partition
-    # at the end for installing UEFI:NTFS partition for NTFS support
-    if parted_mkpart_fs_type == "fat32":
-        subprocess.run(["parted",
-                        "--script",
-                        target_device,
-                        "mkpart",
-                        "primary",
-                        parted_mkpart_fs_type,
-                        "4MiB",
-                        "100%"])  # last sector of the disk
-    elif parted_mkpart_fs_type == "ntfs":
-        # Major partition for storing user files
-        # NOTE: Microsoft Windows has a bug that only recognize the first partition for removable storage devices, that's why this partition should always be the first one
-        subprocess.run(["parted",
-                        "--script",
-                        target_device,
-                        "mkpart",
-                        "primary",
-                        parted_mkpart_fs_type,
-                        "4MiB",
-                        "--",
-                        "-2049s"])  # Leave 512KiB==1024sector in traditional 512bytes/sector disk, disks with sector with more than 512bytes only result in partition size greater than 512KiB and is intentionally let-it-be.
-    # FIXME: Leave exact 512KiB in all circumstances is better, but the algorithm to do so is quite brainkilling.
-    else:
-        utils.print_with_color(_("FATAL: Illegal {0}, please report bug.").format(parted_mkpart_fs_type), "red")
+    # When NTFS is used we leave a 512KiB partition at the end for UEFI:NTFS support.
+    partition_end = "-2049s" if filesystem == "NTFS" else "100%"
+
+    # NOTE: Microsoft Windows has a bug that only recognize the first partition for removable storage devices, that's why this partition should always be the first one
+    if subprocess.run(["parted",
+                       "--script",
+                       target_device,
+                       "mkpart",
+                       "primary",
+                       parted_mkpart_fs_type,
+                       "4MiB",
+                       "--",
+                       partition_end]).returncode != 0:
+        utils.print_with_color(_("Error: Unable to create the target partition"), "red")
+        return 1
 
     utils.check_kill_signal()
 
     workaround.make_system_realize_partition_table_changed(target_device)
 
-    # Format target partition's filesystem
-    if filesystem_type in ["FAT", "vfat"]:
-        subprocess.run([command_mkdosfs, "-F", "32", target_partition])
-    elif filesystem_type in ["NTFS", "ntfs"]:
-        subprocess.run([command_mkntfs, "--quick", "--label", filesystem_label, target_partition])
+    return format_target_partition(target_partition, filesystem, filesystem_label, command_mkdosfs, command_mkntfs,
+                                   cluster_size, quick_format)
+
+
+def format_target_partition(target_partition, filesystem_type, filesystem_label, command_mkdosfs, command_mkntfs,
+                            cluster_size="Default", quick_format=True):
+    """
+    Format a partition with the selected filesystem.
+
+    :param target_partition: Partition device node
+    :param filesystem_type: FAT, NTFS, EXFAT or UDF
+    :param filesystem_label: Volume label
+    :param command_mkdosfs: mkdosfs-compatible utility path
+    :param command_mkntfs: mkntfs utility path
+    :param cluster_size: Cluster size in bytes, or "Default"
+    :param quick_format: Skip the full surface format when supported
+    :return: 0 - success; 1 - failure
+    """
+    filesystem = filesystem_type.upper()
+
+    # The automounter may grab the partition right after it is created
+    utils.check_is_target_device_busy(target_partition)
+
+    utils.print_with_color(_("Formatting {0} as {1}...").format(target_partition, filesystem), "green")
+
+    cluster = None
+    if cluster_size not in (None, "", "Default"):
+        try:
+            cluster = int(cluster_size)
+        except (TypeError, ValueError):
+            cluster = None
+
+    if filesystem in ["FAT", "VFAT"]:
+        command = [command_mkdosfs, "-n", filesystem_label, "-F", "32"]
+        if cluster is not None:
+            command += ["-s", str(max(1, cluster // 512))]
+    elif filesystem == "NTFS":
+        command = [command_mkntfs, "--label", filesystem_label]
+        if quick_format:
+            command += ["--quick"]
+        if cluster is not None:
+            command += ["--cluster-size", str(cluster)]
     else:
-        utils.print_with_color(_("FATAL: Shouldn't be here"), "red")
+        tool = utils.find_filesystem_tool(filesystem)
+
+        if tool is None:
+            utils.print_with_color(
+                _("Error: {0} is not installed, so {1} cannot be created.").format(filesystem, filesystem), "red")
+            return 1
+
+        if filesystem == "EXFAT":
+            command = [tool, "-n", filesystem_label]
+            if cluster is not None:
+                command += ["-c", str(cluster)]
+        else:  # UDF
+            command = [tool, "--media-type=hd", "--udfrev=0x0201", "--lvid", filesystem_label]
+
+    command += [target_partition]
+
+    if subprocess.run(command).returncode != 0:
+        utils.print_with_color(_("Error: Unable to format {0} as {1}").format(target_partition, filesystem), "red")
         return 1
+
+    return 0
 
 
 def create_uefi_ntfs_support_partition(target_device):
@@ -671,8 +959,22 @@ def setup_arguments():
                         help="Workaround BIOS bug that won't include the device in boot menu if non of the partition's boot flag is toggled")
     parser.add_argument("--workaround-skip-grub", action="store_true",
                         help="This will skip the legacy grub bootloader creation step.")
-    parser.add_argument("--target-filesystem", "--tgt-fs", choices=["FAT", "NTFS"], default="FAT", type=str.upper,
+    parser.add_argument("--target-filesystem", "--tgt-fs", choices=["FAT", "NTFS", "EXFAT", "UDF"], default="FAT",
+                        type=str.upper,
                         help="Specify the filesystem to use as the target partition's filesystem.")
+    parser.add_argument("--partition-scheme", choices=["MBR", "GPT"], default="MBR", type=str.upper,
+                        help="Partition table to create on the target device.")
+    parser.add_argument("--target-system", choices=["BIOS", "UEFI"], default="BIOS", type=str.upper,
+                        help="Firmware of the computer that will boot the device: BIOS (installs GRUB) or UEFI.")
+    parser.add_argument("--image-mode", choices=["ISO", "DD", "NONE"], default="ISO", type=str.upper,
+                        help="ISO copies the filesystem and installs a bootloader, DD writes the image "
+                             "byte-for-byte, NONE only formats the device as a plain storage device.")
+    parser.add_argument("--cluster-size", default="Default",
+                        help="Cluster size for the new filesystem in bytes, or Default.")
+    parser.add_argument("--bad-blocks", action="store_true",
+                        help="Run a destructive one pass bad blocks check on the device before writing.")
+    parser.add_argument("--no-quick-format", action="store_true",
+                        help="Do a full format instead of a quick one when the filesystem tool supports it.")
     parser.add_argument('--for-gui', action="store_true", help=argparse.SUPPRESS)
 
     return parser
@@ -737,11 +1039,15 @@ def run():
     source_fs_mountpoint, target_fs_mountpoint, temp_directory, \
         install_mode, source_media, target_media, \
         workaround_bios_boot_flag, skip_legacy_bootloader, target_filesystem_type, \
-        new_file_system_label, verbose, debug, parser = result
+        filesystem_label, verbose, debug, parser, \
+        partition_scheme, target_system, image_mode, cluster_size, quick_format, bad_blocks_check = result
 
     try:
         main(source_fs_mountpoint, target_fs_mountpoint, source_media, target_media, install_mode, temp_directory,
-             target_filesystem_type, workaround_bios_boot_flag, parser, skip_legacy_bootloader)
+             target_filesystem_type, workaround_bios_boot_flag, parser, skip_legacy_bootloader,
+             partition_scheme=partition_scheme, target_system=target_system, image_mode=image_mode,
+             filesystem_label=filesystem_label, cluster_size=cluster_size, quick_format=quick_format,
+             bad_blocks_check=bad_blocks_check)
     except KeyboardInterrupt:
         pass
     except Exception as error:

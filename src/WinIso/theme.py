@@ -365,6 +365,7 @@ class NeonProgressBar(wx.Control):
         super(NeonProgressBar, self).__init__(parent, id, size=(-1, 10), style=wx.BORDER_NONE)
         self.value = 0
         self.pulse_position = 0
+        self.idle = True
         self.accent = accent
         self.background = background
         self.SetMinSize((-1, 10))
@@ -374,10 +375,12 @@ class NeonProgressBar(wx.Control):
 
     def SetValue(self, value):
         self.value = max(0, min(100, int(value)))
+        self.idle = self.value == 0
         self.Refresh()
 
     def Pulse(self):
         self.pulse_position = (self.pulse_position + 7) % 140
+        self.idle = False
         self.Refresh()
 
     def on_paint(self, __=None):
@@ -398,7 +401,7 @@ class NeonProgressBar(wx.Control):
             filled = max(height, width * self.value / 100.0)
             gc.SetBrush(gc.CreateLinearGradientBrush(0, 0, filled, 0, CYAN, MAGENTA))
             gc.DrawRoundedRectangle(0, 1, filled, height - 2, height / 2.0)
-        else:
+        elif not self.idle:
             # indeterminate sweep
             sweep = width / 3.0
             x = (width + sweep) * self.pulse_position / 140.0 - sweep

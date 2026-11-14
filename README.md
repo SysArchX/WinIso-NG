@@ -1,93 +1,100 @@
 <div align="center">
 <h1>WinIso-NG</h1>
-<img src=".github/winiso-logo.png" alt="brand" width="28%" />
+<img src=".github/winiso-logo.png" alt="WinIso-NG" width="24%" />
 </div>
 
-_A Linux program to create a Windows USB stick installer from a real Windows DVD or image._
+_Create bootable Windows (and Linux) USB installers from the Linux desktop — with a Rufus-style form and a dark neon interface._
 
-This package contains two programs:
+WinIso-NG is a fork of [WoeUSB-ng](https://github.com/WoeUSB/WoeUSB-ng). It writes an ISO/IMG image to a USB storage device and makes it bootable, with the same workflow and options you know from Rufus: pick the device, pick the image, choose MBR/GPT, filesystem and options, then press **START**.
 
-* **winiso**: A command-line utility that enables you to create your own bootable Windows installation USB storage device from an existing Windows Installation disc or disk image
-* **winisogui**: Graphic version of winiso
+## Features
 
-Supported images:
+**Drive properties**
 
-Windows Vista, Windows 7, Window 8.x, Windows 10. All languages and any version (home, pro...) and Windows PE are supported.
+* Device selector listing removable USB drives, plus **List USB Hard Drives** to reveal USB disks/SSDs
+* Boot selection: **Disk or ISO image**, or **Non bootable** (format the drive as plain storage)
+* **Image option**: *Standard (copy files)* or *DD image mode (raw write)*
+* **SELECT** to choose the image and **CHECKSUM** for MD5 / SHA-1 / SHA-256 / SHA-512
 
-Supported bootmodes:
+**Format options**
 
-* Legacy/MBR-style/IBM PC compatible bootmode
-* Native UEFI booting is supported for Windows 7 and later images (limited to the FAT filesystem as the target)
+* Partition scheme: **MBR** or **GPT** (picking GPT sets *UEFI (non CSM)* automatically, like Rufus)
+* Target system: **BIOS (or UEFI-CSM)** or **UEFI (non CSM)**
+* File systems: **FAT32**, **NTFS**, **exFAT**, **UDF** (only the ones whose tools are installed are offered)
+* **Cluster size** selection, **Volume label**
+* **Quick format** and **Check device for bad blocks** (destructive, one pass)
 
-This project rewrite of original [WinIso](https://github.com/WinIso/WinIso-NG) 
+**During the job**
 
-## Installation
+* Inline status line, neon progress bar, **Cancel**
+* Live log window (Options → Show log)
+* Automatic NTFS switch when `install.wim` exceeds the FAT32 4 GiB limit, UEFI:NTFS support partition, Windows 7 UEFI workaround, legacy GRUB bootloader for BIOS targets
 
-### Arch
+## Install
+
+### Debian / Ubuntu / Linux Mint (.deb)
+
 ```shell
-yay -S winiso-ng
+sudo apt install ./winiso-ng_0.2.0_all.deb
 ```
 
-### For other distributions
+Build it yourself:
 
-### 1. Install WinIso-NG's Dependencies
-#### Ubuntu
-
-```shell
-sudo apt install git p7zip-full python3-pip python3-wxgtk4.0 grub2-common grub-pc-bin parted dosfstools ntfs-3g
-```
-
-#### Fedora (tested on: Fedora Workstation 33)
-```shell
-sudo dnf install git p7zip p7zip-plugins python3-pip python3-wxpython4
-```
-
-### 2. Install WinIso-NG
-```shell
-sudo pip3 install WinIso-NG
-```
-
-## Installation from source code
-
-### 1. Install WinIso-NG's Build Dependencies
-#### Ubuntu
-```shell
-sudo apt install git p7zip-full python3-pip python3-wxgtk4.0 grub2-common grub-pc-bin parted dosfstools ntfs-3g
-```
-#### Arch
-```shell
-sudo pacman -Suy p7zip python-pip python-wxpython
-```
-#### Fedora (tested on: Fedora Workstation 33) 
-```shell
-sudo dnf install git p7zip p7zip-plugins python3-pip python3-wxpython4
-```
-### 2. Install WinIso-NG
 ```shell
 git clone https://github.com/SysArchX/WinIso-NG.git
 cd WinIso-NG
+./packaging/build_deb.sh          # writes dist/winiso-ng_<version>_all.deb
+sudo apt install ./dist/winiso-ng_0.2.0_all.deb
+```
+
+The package installs the `winiso` and `winisogui` commands, the menu entry, the polkit policy and the bundled Orbitron/Rajdhani fonts.
+
+### From source
+
+```shell
+sudo apt install git p7zip-full python3-pip python3-wxgtk4.0 grub2-common grub-pc-bin parted dosfstools ntfs-3g exfatprogs udftools
 sudo pip3 install .
 ```
 
-## Installation from source code locally or in virtual environment 
-```shell
-git clone https://github.com/SysArchX/WinIso-NG.git
-cd WinIso-NG
-git apply development.patch
-sudo pip3 install -e .
-```
-Please note that this will not create menu shortcut and you may need to run gui twice as it may want to adjust policy. 
+### Arch
 
-## Uninstalling
-
-To remove WinIso-NG completely run (needed only when using installation from source code):
 ```shell
-sudo pip3 uninstall WinIso-NG
-sudo rm /usr/share/icons/WinIso-NG/icon.ico \
-    /usr/share/applications/WinIso-NG.desktop \
-    /usr/local/bin/winisogui
-sudo rmdir /usr/share/icons/WinIso-NG/
+sudo pacman -S --needed p7zip python-pip python-wxpython parted dosfstools ntfs-3g exfatprogs udftools
+git clone https://github.com/SysArchX/WinIso-NG.git && cd WinIso-NG && sudo pip3 install .
 ```
+
+## Usage
+
+```shell
+sudo winisogui                                   # graphical interface
+sudo winiso --device image.iso /dev/sdX          # copy mode + legacy GRUB
+sudo winiso --device image.iso /dev/sdX --image-mode DD --target-filesystem NTFS
+sudo winiso --device image.iso /dev/sdX --partition-scheme GPT --target-system UEFI
+sudo winiso --device image.iso /dev/sdX --bad-blocks --cluster-size 4096
+```
+
+Run `winiso --help` for the complete option list.
+
+## Rufus features that are not implemented
+
+These Rufus options have no portable Linux equivalent and are deliberately absent:
+
+* Windows To Go, Windows VHD and Windows 11 "TPM/Secure Boot bypass"
+* Rufus MBR, Syslinux/GRUB4DOS/ReactOS bootloader installation
+* Persistence partition for Ubuntu/Debian live images
+* Built-in ISO download, update check and USB → VHD image dumping
+* FreeDOS / MS-DOS boot media creation
+
+Everything else in the form above is implemented natively in Python; no Rufus code was used.
+
+## Credits
+
+* [WoeUSB-ng](https://github.com/WoeUSB/WoeUSB-ng) by WaxyMocha, Lin-Buo-Ren, slacka and contributors — the engine this fork started from
+* [WoeUSB](https://github.com/slacka/WoeUSB) by slacka et al.
+* [WinUSB](https://github.com/congelli) by Colin GILLE / congelli501
+* Interface layout inspired by [Rufus](https://rufus.ie) by Pete Batard (no code shared)
+* Fonts: [Orbitron](https://github.com/theleagueof/orbitron) and [Rajdhani](https://github.com/itfoundry/rajdhani), SIL Open Font License 1.1
 
 ## License
-WinIso-NG is distributed under the [GPL license](https://github.com/SysArchX/WinIso-NG/blob/master/COPYING).
+
+GPLv3 or later — see [COPYING](COPYING).

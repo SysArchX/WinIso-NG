@@ -368,6 +368,11 @@ def print_with_color(text, color=""):
     """
     if gui is not None:
         gui.state = text
+        if hasattr(gui, "append_log"):
+            try:
+                gui.append_log(text)
+            except Exception:
+                pass
         if color == "red":
             gui.error = text
             sys.exit()
@@ -467,3 +472,96 @@ def update_policy_to_allow_for_running_gui_as_root(path):
 
     with open("/usr/share/polkit-1/actions/com.github.winiso.winiso-ng.policy", "w") as file:
         file.write(dom.toxml())
+
+
+def extract_percentage(text):
+    """
+    Pull a trailing percentage out of a progress line printed by badblocks/dd.
+
+    :param text: A line such as "Checking for bad blocks (read-write test):  42.51% done"
+    :return: Integer percentage or None
+    """
+    match = re.search(r"([0-9]{1,3}(?:\.[0-9]+)?)\s*%", text)
+    if match is None:
+        return None
+
+    try:
+        return min(100, int(float(match.group(1))))
+    except ValueError:
+        return None
+
+
+def find_filesystem_tool(filesystem_type):
+    """
+    Locate the mkfs utility for a filesystem.
+
+    :param filesystem_type: FAT, NTFS, EXFAT or UDF
+    :return: Path of the formatting utility, or None when it is not installed
+    """
+    candidates = {
+        "FAT": ["mkdosfs", "mkfs.fat", "mkfs.vfat", "mkfs.msdos"],
+        "NTFS": ["mkntfs"],
+        "EXFAT": ["mkexfatfs", "mkfs.exfat"],
+        "UDF": ["mkudffs"],
+    }
+
+    for command in candidates.get(filesystem_type.upper(), []):
+        path = shutil.which(command)
+        if path is not None:
+            return path
+
+    return None
+
+
+def supported_filesystems():
+    """
+    :return: Dict of the filesystems that can be created on this system and their utility
+    """
+    return {name: find_filesystem_tool(name) for name in ("FAT", "NTFS", "EXFAT", "UDF")}
+
+
+def get_media_size(path):
+    """
+    :param path: A regular file or a block device
+    :return: Size in bytes (0 when it cannot be determined)
+    """
+    try:
+        if os.path.isfile(path):
+            return os.path.getsize(path)
+
+        result = subprocess.run(["blockdev", "--getsize64", path], stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL)
+        if result.returncode == 0:
+            return int(result.stdout.decode("utf-8").strip() or 0)
+    except (OSError, ValueError):
+        pass
+
+    return 0
+
+
+def calculate_checksum(path, algorithm="sha256", progress_callback=None):
+    """
+    Compute the checksum of an image without loading it into memory.
+
+    :param path: File to hash
+    :param algorithm: Any algorithm supported by hashlib (md5, sha1, sha256, sha512)
+    :param progress_callback: Optional callable(percentage, hashed_bytes, total_bytes)
+    :return: Hexadecimal digest
+    """
+    import hashlib
+
+    digest = hashlib.new(algorithm)
+    total = get_media_size(path)
+    processed = 0
+
+    with open(path, "rb") as image:
+        while True:
+            chunk = image.read(4 * 1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+            processed += len(chunk)
+            if progress_callback is not None and total:
+                progress_callback(int(processed * 100 / total), processed, total)
+
+    return digest.hexdigest()

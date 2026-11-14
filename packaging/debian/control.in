@@ -1,0 +1,37 @@
+Package: winiso-ng
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: SysArchX <354081608+SysArchX@users.noreply.github.com>
+Homepage: https://github.com/SysArchX/WinIso-NG
+Depends: python3 (>= 3.6),
+         python3-wxgtk4.0,
+         python3-termcolor,
+         p7zip-full,
+         parted,
+         dosfstools,
+         ntfs-3g,
+         e2fsprogs,
+         util-linux,
+         coreutils,
+         grub2-common | grub-common
+Recommends: exfatprogs,
+            udftools,
+            pkexec | policykit-1
+Suggests: mtools
+Description: create bootable Windows and Linux USB installers (Rufus-style GUI)
+ WinIso-NG writes ISO or IMG images to a USB storage device, creating a
+ bootable Windows installer (or any other bootable image) from the Linux
+ desktop. It is a fork of WoeUSB-ng with a Rufus-inspired form and a dark
+ neon interface.
+ .
+ Features:
+  * Disk or ISO image, DD raw image mode and non-bootable (format only) modes
+  * MBR and GPT partition tables
+  * FAT32, NTFS, exFAT and UDF target filesystems with selectable cluster size
+  * Quick format, destructive bad blocks check and image checksums
+    (MD5, SHA-1, SHA-256, SHA-512)
+  * Legacy BIOS boot through GRUB, native UEFI boot and UEFI:NTFS support for
+    images whose install.wim exceeds the FAT32 4 GiB file size limit
+  * Live log window and inline progress reporting

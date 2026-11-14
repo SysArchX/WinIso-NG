@@ -1,0 +1,46 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: WinIso-NG
+Upstream-Contact: https://github.com/SysArchX/WinIso-NG/issues
+Source: https://github.com/SysArchX/WinIso-NG
+
+Files: *
+Copyright: 2019-2026 WinIso-NG contributors
+           2019 WaxyMocha
+           2017 slacka et al.
+           2013 Colin GILLE / congelli501
+License: GPL-3+
+
+Files: src/WinIso/data/fonts/*
+Copyright: 2018 The Orbitron Project Authors
+           2014 The Rajdhani Project Authors
+License: OFL-1.1
+
+License: GPL-3+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ .
+ On Debian systems the full text of the GNU General Public License version 3
+ can be found in /usr/share/common-licenses/GPL-3.
+
+License: OFL-1.1
+ This Font Software is licensed under the SIL Open Font License, Version 1.1.
+ The licence text is installed with the fonts in
+ /usr/share/doc/winiso-ng/fonts/OFL.txt and is also available at
+ https://scripts.sil.org/OFL
+
+Comment:
+ WinIso-NG is an independent fork of WoeUSB-ng (GPL-3+), which in turn is a
+ Python rewrite of the original WoeUSB and WinUSB tools.
+ The interface is inspired by the layout of Rufus (GPL-3+, by Pete Batard),
+ but WinIso-NG shares no source code with it: everything was written from
+ scratch in Python for Linux.
