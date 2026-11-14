@@ -5,8 +5,8 @@ index dca8421..b3e02fe 100644
 @@ -72,6 +72,7 @@ setup(
      include_package_data=True,
      scripts=[
-         'WoeUSB/woeusb',
-+        'WoeUSB/woeusbgui',
+         'WinIso/winiso',
++        'WinIso/winisogui',
      ],
      install_requires=[
          'termcolor',

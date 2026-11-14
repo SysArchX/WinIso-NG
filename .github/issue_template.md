@@ -5,25 +5,25 @@ Checkout [Mastering Markdown · GitHub Guides](https://guides.github.com/feature
 * [ ] I've built the latest development snapshot using the instructions in README and verified that the issue can still be reproduced (for bug reports)
 
 ## Issue Reproduce Instructions
-> 1. Launch WoeUSB by running `<command>`
+> 1. Launch WinIso by running `<command>`
 > 2. Do blablabla...
 
 ## Expected Behavior
 > No error
 
 ## Current Behavior
-> WoeUSB errors with message "blablabla"
+> WinIso errors with message "blablabla"
 
 ## Info of My Environment
-### WoeUSB Version
-> For source code build, run `git describe --tags --always --dirty` under the source tree, for prebuilt releases refer the source that provides WoeUSB
+### WinIso Version
+> For source code build, run `git describe --tags --always --dirty` under the source tree, for prebuilt releases refer the source that provides WinIso
 
-### WoeUSB Source
+### WinIso Source
 > Built from source code, commit abcdefg
 > Installed from Ubuntu 16.04 software archive
 
 ### Information about the Operating System
-> Different OS distributions provides different characteristics and may influence the result of running WoeUSB.  Run `lsb_release --description` or `lsb_release -d` in a terminal to acquire this information.
+> Different OS distributions provides different characteristics and may influence the result of running WinIso.  Run `lsb_release --description` or `lsb_release -d` in a terminal to acquire this information.
 
 ### Information about the Source Media
 > "Windows 9 Professional Edition" downloaded from <https://microsoft.com/download/windows-9>

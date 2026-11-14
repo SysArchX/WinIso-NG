@@ -1,4 +1,4 @@
-GUI for WoeUSB
+GUI for WinIso
 **************************
 
 .. automodule:: gui

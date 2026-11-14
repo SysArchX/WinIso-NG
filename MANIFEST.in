@@ -1,4 +1,4 @@
-graft src/WoeUSB/data*
-graft src/WoeUSB/locale*
+graft src/WinIso/data*
+graft src/WinIso/locale*
 graft miscellaneous
 include README.md

@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.abspath('../src'))
 
 # -- Project information -----------------------------------------------------
 
-project = 'WoeUSB'
+project = 'WinIso-NG'
 copyright = '2018, congelli501, slacka and WaxyMocha et. al.'
 author = 'congelli501, slacka and WaxyMocha et. al.'
 
@@ -103,7 +103,7 @@ html_static_path = ['_static']
 # -- Options for HTMLHelp output ---------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'WoeUSBdoc'
+htmlhelp_basename = 'WinIsodoc'
 
 
 # -- Options for LaTeX output ------------------------------------------------
@@ -130,7 +130,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'WoeUSB.tex', 'WoeUSB Documentation',
+    (master_doc, 'WinIso.tex', 'WinIso Documentation',
      'congelli501, slacka and WaxyMocha et. al.', 'manual'),
 ]
 
@@ -140,7 +140,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'woeusb', 'WoeUSB Documentation',
+    (master_doc, 'winiso', 'WinIso Documentation',
      [author], 1)
 ]
 
@@ -151,8 +151,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'WoeUSB', 'WoeUSB Documentation',
-     author, 'WoeUSB', 'One line description of project.',
+    (master_doc, 'WinIso', 'WinIso Documentation',
+     author, 'WinIso', 'One line description of project.',
      'Miscellaneous'),
 ]
 
@@ -164,5 +164,5 @@ texinfo_documents = [
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
 
-html_logo = "../src/data/woeusb-logo.png"
+html_logo = "../src/data/winiso-logo.png"
 html_favicon = "../src/data/icon.ico"

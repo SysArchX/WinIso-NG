@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=WinIso-NG
+Comment=Create your own usb stick windows installer from an iso image or a real DVD.
+Exec=winisogui
+Icon=winiso-logo
+Terminal=false
+Type=Application
+Categories=Utility;
+Encoding=UTF-8
+Categories=Application;Utility;
+StartupNotify=true
