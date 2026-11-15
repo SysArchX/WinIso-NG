@@ -5,7 +5,7 @@
 
 ![WinIso-NG Interface](doc/screenshot.png)
 
-_Create bootable Windows (and Linux) USB installers from the Linux desktop — with a Rufus-style form and a dark neon interface._
+_Create bootable Windows (and Linux) USB installers from the Linux desktop, with a Rufus-style form and a dark wxPython interface._
 
 WinIso-NG is a fork of [WoeUSB-ng](https://github.com/WoeUSB/WoeUSB-ng). It writes an ISO/IMG image to a USB storage device and makes it bootable, with the same workflow and options you know from Rufus: pick the device, pick the image, choose MBR/GPT, filesystem and options, then press **START**.
 
@@ -14,7 +14,7 @@ WinIso-NG is a fork of [WoeUSB-ng](https://github.com/WoeUSB/WoeUSB-ng). It writ
 **Drive properties**
 
 * Device selector listing removable USB drives, plus **List USB Hard Drives** to reveal USB disks/SSDs
-* **Host disk protection**: any physical disk backing `/`, `/boot`, `/boot/efi`, `/home` or swap is always hidden — even with *List USB Hard Drives* enabled — so the running system can never be wiped by accident
+* **Host disk protection**: any physical disk backing `/`, `/boot`, `/boot/efi`, `/home` or swap is always hidden, even with *List USB Hard Drives* enabled, so the running system can never be wiped by accident
 * **Target confirmation dialog** before writing, showing the device model, size and `/dev/sdX` path
 * Boot selection: **Disk or ISO image**, or **Non bootable** (format the drive as plain storage)
 * **Image option**: *Standard (copy files)* or *DD image mode (raw write)*
@@ -31,7 +31,7 @@ WinIso-NG is a fork of [WoeUSB-ng](https://github.com/WoeUSB/WoeUSB-ng). It writ
 
 **During the job**
 
-* Inline status line, neon progress bar, **Cancel**
+* Inline status line, progress bar, **Cancel**
 * Live log window (Options → Show log)
 * UEFI:NTFS support partition, Windows 7 UEFI workaround, legacy GRUB bootloader for BIOS targets
 
@@ -130,7 +130,7 @@ The suite covers the `lsblk` device filter (root/swap/home disks are blocked, re
 
 ## Credits
 
-* [WoeUSB-ng](https://github.com/WoeUSB/WoeUSB-ng) by WaxyMocha, Lin-Buo-Ren, slacka and contributors — the engine this fork started from
+* [WoeUSB-ng](https://github.com/WoeUSB/WoeUSB-ng) by WaxyMocha, Lin-Buo-Ren, slacka and contributors, the engine this fork started from
 * [WoeUSB](https://github.com/slacka/WoeUSB) by slacka et al.
 * [WinUSB](https://github.com/congelli) by Colin GILLE / congelli501
 * Interface layout inspired by [Rufus](https://rufus.ie) by Pete Batard (no code shared)
@@ -138,4 +138,4 @@ The suite covers the `lsblk` device filter (root/swap/home disks are blocked, re
 
 ## License
 
-GPLv3 or later — see [COPYING](COPYING).
+GPLv3 or later. See [COPYING](COPYING).
