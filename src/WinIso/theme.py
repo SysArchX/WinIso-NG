@@ -1,8 +1,8 @@
-"""Futuristic dark/neon theme for the WinIso-NG GUI.
+"""Professional light theme for the WinIso-NG GUI.
 
-Provides the colour palette, bundled font loading and the custom-drawn
-widgets used by the interface (background, cards, buttons, radio buttons,
-progress bar and the installation progress dialog).
+A neutral, high-contrast palette with a single blue accent, system UI fonts and
+flat controls, so the application looks like a modern desktop utility instead of
+a custom-drawn neon skin.
 """
 
 import os
@@ -12,23 +12,39 @@ import wx
 # --------------------------------------------------------------------------
 # Palette
 # --------------------------------------------------------------------------
-BG_TOP = wx.Colour(8, 12, 24)
-BG_BOTTOM = wx.Colour(17, 23, 42)
-CARD = wx.Colour(12, 18, 33)
-CARD_TOP = wx.Colour(17, 25, 45)
-CYAN = wx.Colour(0, 229, 255)
-MAGENTA = wx.Colour(255, 45, 149)
-VIOLET = wx.Colour(124, 77, 255)
-TEXT = wx.Colour(232, 240, 255)
-MUTED = wx.Colour(118, 140, 178)
-DIM = wx.Colour(72, 90, 120)
-BORDER = wx.Colour(38, 58, 92)
+BG = wx.Colour(0xF4, 0xF5, 0xF7)          # window background
+SURFACE = wx.Colour(0xFF, 0xFF, 0xFF)      # cards, panels, inputs
+SURFACE_ALT = wx.Colour(0xF9, 0xFA, 0xFB)  # subtle fills, hover states
+BORDER = wx.Colour(0xE1, 0xE5, 0xEA)       # 1px hairlines
+BORDER_STRONG = wx.Colour(0xD1, 0xD5, 0xDB)
 
-FONTS = {"title": None, "label": None, "body": None, "small": None}
+TEXT = wx.Colour(0x11, 0x18, 0x27)
+MUTED = wx.Colour(0x6B, 0x72, 0x80)
+DIM = wx.Colour(0x9C, 0xA3, 0xAF)
+
+ACCENT = wx.Colour(0x25, 0x63, 0xEB)
+ACCENT_HOVER = wx.Colour(0x1D, 0x4E, 0xD8)
+ACCENT_SOFT = wx.Colour(0xEF, 0xF6, 0xFF)
+SUCCESS = wx.Colour(0x05, 0x96, 0x69)
+WARNING = wx.Colour(0xB4, 0x53, 0x09)
+DANGER = wx.Colour(0xDC, 0x26, 0x26)
+
+# Names kept for the existing call sites; they now map to the neutral palette.
+BG_TOP = SURFACE
+BG_BOTTOM = SURFACE
+CARD = SURFACE
+CARD_TOP = SURFACE_ALT
+CYAN = ACCENT
+MAGENTA = ACCENT
+VIOLET = BORDER_STRONG
+
+FONTS = {"title": None, "heading": None, "label": None, "body": None, "small": None}
+
+_UI_FACES = ("Segoe UI", "Inter", "Cantarell", "Ubuntu", "Noto Sans", "DejaVu Sans")
 
 
 def register_fonts(data_directory):
-    """Register the bundled fonts (when the platform allows it) and build the UI fonts."""
+    """Build the interface fonts from the system UI face (bundled fonts optional)."""
     font_directory = os.path.join(data_directory, "fonts")
 
     add_private_font = getattr(wx.FontEnumerator, "AddPrivateFont", None)
@@ -42,25 +58,27 @@ def register_fonts(data_directory):
                 except Exception:
                     pass
 
-    def resolve_face(preferred, fallback="DejaVu Sans"):
-        """Use the preferred family when the system can provide it, otherwise fall back."""
-        probe = wx.Font(wx.FontInfo(12).FaceName(preferred))
-        if probe.GetFaceName() == preferred:
-            return preferred
-        return fallback
+    def resolve_face():
+        for face in _UI_FACES:
+            probe = wx.Font(wx.FontInfo(11).FaceName(face))
+            if probe.GetFaceName() == face:
+                return face
+        return ""
 
-    title_face = resolve_face("Orbitron")
-    body_face = resolve_face("Rajdhani")
+    face = resolve_face()
 
-    def build(face, size, weight=wx.FONTWEIGHT_NORMAL):
-        font = wx.Font(wx.FontInfo(size).FaceName(face))
+    def build(size, weight=wx.FONTWEIGHT_NORMAL):
+        font = wx.Font(wx.FontInfo(size))
+        if face:
+            font.SetFaceName(face)
         font.SetWeight(weight)
         return font
 
-    FONTS["title"] = build(title_face, 20, wx.FONTWEIGHT_BOLD)
-    FONTS["label"] = build(body_face, 11, wx.FONTWEIGHT_BOLD)
-    FONTS["body"] = build(body_face, 11)
-    FONTS["small"] = build(body_face, 9)
+    FONTS["title"] = build(17, wx.FONTWEIGHT_BOLD)
+    FONTS["heading"] = build(9, wx.FONTWEIGHT_BOLD)
+    FONTS["label"] = build(10)
+    FONTS["body"] = build(10)
+    FONTS["small"] = build(9)
     return FONTS
 
 
@@ -77,53 +95,30 @@ def accent_gradient(gc, rect, first, second):
     return gc.CreateLinearGradientBrush(rect.x, rect.y, rect.x + rect.width, rect.y, first, second)
 
 
+def ui_font(kind, fallback_widget=None):
+    """Return one of the registered fonts, falling back to the widget font."""
+    font = FONTS.get(kind)
+    if font is not None:
+        return wx.Font(font)
+    return wx.Font(fallback_widget.GetFont()) if fallback_widget is not None else wx.Font(wx.FontInfo(10))
+
+
 # --------------------------------------------------------------------------
-# Background
+# Surfaces
 # --------------------------------------------------------------------------
 class TechBackground(wx.Panel):
-    """Panel painting the dark gradient, tech grid and neon top border."""
+    """Plain application surface (kept name for compatibility)."""
 
     def __init__(self, parent, id=wx.ID_ANY, **kwargs):
         super(TechBackground, self).__init__(parent, id, **kwargs)
-        self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
-        self.Bind(wx.EVT_PAINT, self.on_paint)
-        self.Bind(wx.EVT_SIZE, lambda event: (self.Refresh(), event.Skip()))
-
-    def on_paint(self, __=None):
-        dc = wx.AutoBufferedPaintDC(self)
-        dc.SetBackground(wx.Brush(BG_BOTTOM))
-        dc.Clear()
-
-        gc = wx.GraphicsContext.Create(dc)
-        if gc is None:
-            return
-
-        width, height = self.GetClientSize()
-
-        brush = gc.CreateLinearGradientBrush(0, 0, 0, height, BG_TOP, BG_BOTTOM)
-        gc.SetBrush(brush)
-        gc.SetPen(wx.TRANSPARENT_PEN)
-        gc.DrawRectangle(0, 0, width, height)
-
-        # tech grid
-        gc.SetPen(wx.Pen(wx.Colour(96, 160, 230, 16), 1))
-        step = 34
-        for x in range(0, width, step):
-            gc.StrokeLine(x, 0, x, height)
-        for y in range(0, height, step):
-            gc.StrokeLine(0, y, width, y)
-
-        # neon hairline at the very top
-        gc.SetPen(wx.Pen(CYAN, 2))
-        gc.StrokeLine(0, 1, width * 0.55, 1)
-        gc.SetPen(wx.Pen(MAGENTA, 2))
-        gc.StrokeLine(width * 0.55, 1, width, 1)
+        self.SetBackgroundColour(SURFACE)
+        self.Bind(wx.EVT_ERASE_BACKGROUND, lambda event: None)
 
 
 class Card(wx.Panel):
-    """Rounded translucent card with a neon corner accent."""
+    """White rounded card with a 1px border."""
 
-    def __init__(self, parent, id=wx.ID_ANY, accent=CYAN, **kwargs):
+    def __init__(self, parent, id=wx.ID_ANY, accent=ACCENT, **kwargs):
         super(Card, self).__init__(parent, id, **kwargs)
         self.accent = accent
         self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
@@ -132,35 +127,25 @@ class Card(wx.Panel):
 
     def on_paint(self, __=None):
         dc = wx.AutoBufferedPaintDC(self)
-        dc.SetBackground(wx.Brush(BG_BOTTOM))
+        dc.SetBackground(wx.Brush(BG))
         dc.Clear()
         gc = wx.GraphicsContext.Create(dc)
         if gc is None:
             return
 
         width, height = self.GetClientSize()
-        radius = 10
-
-        gc.SetBrush(wx.Brush(CARD))
-        gc.SetPen(wx.Pen(wx.Colour(120, 200, 255, 40), 1))
-        gc.DrawRoundedRectangle(1, 1, width - 2, height - 2, radius)
-
-        # faint inner highlight along the top edge
-        gc.SetPen(wx.Pen(wx.Colour(self.accent.Red(), self.accent.Green(), self.accent.Blue(), 45), 1))
-        gc.StrokeLine(12, 2, width - 12, 2)
-
-        # accent bar on the left edge
-        gc.SetPen(wx.Pen(self.accent, 3))
-        gc.StrokeLine(1, 12, 1, height - 12)
+        gc.SetBrush(wx.Brush(SURFACE))
+        gc.SetPen(wx.Pen(BORDER, 1))
+        gc.DrawRoundedRectangle(0.5, 0.5, width - 1, height - 1, 8)
 
 
 # --------------------------------------------------------------------------
 # Controls
 # --------------------------------------------------------------------------
 class FieldFrame(wx.Panel):
-    """Inset text field frame with a neon hairline border."""
+    """Rounded 1px border around a text field."""
 
-    def __init__(self, parent, id=wx.ID_ANY, accent=BORDER, background=CARD, min_height=40):
+    def __init__(self, parent, id=wx.ID_ANY, accent=BORDER, background=SURFACE, min_height=34):
         super(FieldFrame, self).__init__(parent, id)
         self.accent = accent
         self.background = background
@@ -178,19 +163,18 @@ class FieldFrame(wx.Panel):
             return
 
         width, height = self.GetClientSize()
-        gc.SetBrush(wx.Brush(BG_TOP))
-        gc.SetPen(wx.Pen(wx.Colour(self.accent.Red(), self.accent.Green(), self.accent.Blue(), 160), 1))
-        gc.DrawRoundedRectangle(0.5, 0.5, width - 1, height - 1, 5)
+        gc.SetBrush(wx.Brush(SURFACE_ALT))
+        gc.SetPen(wx.Pen(BORDER_STRONG if self.IsEnabled() else BORDER, 1))
+        gc.DrawRoundedRectangle(0.5, 0.5, width - 1, height - 1, 6)
 
 
 class NeonButton(wx.Control):
-    """Custom drawn futuristic button."""
+    """Flat button: filled = primary action, outlined = secondary."""
 
-    def __init__(self, parent, id=wx.ID_ANY, label="", accent=CYAN, filled=False,
-                 min_size=(120, 40), background=BG_BOTTOM):
-        super(NeonButton, self).__init__(parent, id, size=min_size,
-                                         style=wx.BORDER_NONE)
-        self.label = label.upper()
+    def __init__(self, parent, id=wx.ID_ANY, label="", accent=ACCENT, filled=False,
+                 min_size=(120, 34), background=SURFACE):
+        super(NeonButton, self).__init__(parent, id, size=min_size, style=wx.BORDER_NONE)
+        self.label = label
         self.accent = accent
         self.filled = filled
         self.background = background
@@ -228,7 +212,7 @@ class NeonButton(wx.Control):
         self.GetEventHandler().ProcessEvent(event)
 
     def SetLabel(self, label):
-        self.label = label.upper()
+        self.label = label
         self.Refresh()
 
     def GetLabel(self):
@@ -248,42 +232,32 @@ class NeonButton(wx.Control):
 
         width, height = self.GetClientSize()
         enabled = self.IsEnabled()
-        accent = self.accent if enabled else DIM
         radius = 6
 
-        # outer glow
-        if enabled and self.hover:
-            for offset, alpha in ((4, 26), (2, 46)):
-                gc.SetPen(wx.Pen(wx.Colour(accent.Red(), accent.Green(), accent.Blue(), alpha), 2))
-                gc.SetBrush(wx.TRANSPARENT_BRUSH)
-                gc.DrawRoundedRectangle(offset, offset, width - offset * 2, height - offset * 2, radius)
-
-        # body
-        if self.filled and enabled:
-            brush = gc.CreateLinearGradientBrush(0, 0, width, height,
-                                                 lerp_colour(accent, wx.BLACK, 0.15),
-                                                 lerp_colour(accent, wx.BLACK, 0.55))
-        elif self.hover and enabled:
-            brush = gc.CreateLinearGradientBrush(0, 0, 0, height,
-                                                 wx.Colour(accent.Red(), accent.Green(), accent.Blue(), 60), CARD)
+        if not enabled:
+            fill, border, text = SURFACE_ALT, BORDER, DIM
+        elif self.filled:
+            fill = ACCENT_HOVER if self.hover else ACCENT
+            border, text = fill, wx.WHITE
         else:
-            brush = gc.CreateLinearGradientBrush(0, 0, 0, height, CARD_TOP, CARD)
-        gc.SetBrush(brush)
-        gc.SetPen(wx.Pen(accent if enabled else BORDER, 2))
-        gc.DrawRoundedRectangle(1, 1, width - 2, height - 2, radius)
+            fill = SURFACE_ALT if self.hover else SURFACE
+            border, text = BORDER_STRONG, TEXT
 
-        # label
-        font = wx.Font(FONTS["label"]) if FONTS["label"] else self.GetFont()
-        font.SetPointSize(11)
-        gc.SetFont(font, wx.WHITE if self.filled and enabled else (TEXT if enabled else DIM))
+        gc.SetBrush(wx.Brush(fill))
+        gc.SetPen(wx.Pen(border, 1))
+        gc.DrawRoundedRectangle(0.5, 0.5, width - 1, height - 1, radius)
+
+        font = ui_font("label", self)
+        font.SetWeight(wx.FONTWEIGHT_BOLD if self.filled else wx.FONTWEIGHT_NORMAL)
+        gc.SetFont(font, text)
         text_width, text_height = gc.GetTextExtent(self.label)
         gc.DrawText(self.label, (width - text_width) / 2, (height - text_height) / 2)
 
 
 class NeonRadio(wx.Control):
-    """Custom drawn neon radio button (mutual exclusion handled by the owner)."""
+    """Minimal radio button (mutual exclusion handled by the owner)."""
 
-    def __init__(self, parent, id=wx.ID_ANY, label="", accent=CYAN, background=CARD):
+    def __init__(self, parent, id=wx.ID_ANY, label="", accent=ACCENT, background=SURFACE):
         super(NeonRadio, self).__init__(parent, id, size=(-1, 26), style=wx.BORDER_NONE)
         self.label = label
         self.accent = accent
@@ -336,39 +310,33 @@ class NeonRadio(wx.Control):
         height = self.GetClientSize().height
         centre_y = height / 2.0
         enabled = self.IsEnabled()
-        accent = self.accent if enabled else DIM
         radius = 7
 
-        # outer ring
-        pen_width = 2 if not self.selected else 3
-        gc.SetPen(wx.Pen(accent, pen_width))
-        gc.SetBrush(wx.Brush(wx.Colour(accent.Red(), accent.Green(), accent.Blue(), 40) if self.selected
-                             else CARD))
+        gc.SetBrush(wx.Brush(SURFACE))
+        gc.SetPen(wx.Pen(ACCENT if self.selected and enabled else BORDER_STRONG, 1))
         gc.DrawEllipse(4, centre_y - radius, radius * 2, radius * 2)
 
         if self.selected:
-            glow = wx.Colour(accent.Red(), accent.Green(), accent.Blue(), 90)
-            gc.SetBrush(wx.Brush(glow))
+            gc.SetBrush(wx.Brush(ACCENT if enabled else DIM))
             gc.SetPen(wx.TRANSPARENT_PEN)
             gc.DrawEllipse(8, centre_y - radius + 4, (radius - 4) * 2, (radius - 4) * 2)
 
-        font = wx.Font(FONTS["label"]) if FONTS["label"] else self.GetFont()
-        gc.SetFont(font, TEXT if enabled else DIM)
+        gc.SetFont(ui_font("body", self), TEXT if enabled else DIM)
         text_width, text_height = gc.GetTextExtent(self.label)
         gc.DrawText(self.label, 30, centre_y - text_height / 2.0)
 
 
 class NeonProgressBar(wx.Control):
-    """Slim neon progress bar with pulse mode."""
+    """Slim progress bar with an indeterminate sweep."""
 
-    def __init__(self, parent, id=wx.ID_ANY, accent=CYAN, background=CARD):
-        super(NeonProgressBar, self).__init__(parent, id, size=(-1, 10), style=wx.BORDER_NONE)
+    def __init__(self, parent, id=wx.ID_ANY, accent=ACCENT, background=SURFACE):
+        super(NeonProgressBar, self).__init__(parent, id, size=(-1, 6), style=wx.BORDER_NONE)
         self.value = 0
         self.pulse_position = 0
         self.idle = True
         self.accent = accent
         self.background = background
-        self.SetMinSize((-1, 10))
+        self.SetMinSize((-1, 6))
         self.SetBackgroundStyle(wx.BG_STYLE_PAINT)
         self.Bind(wx.EVT_PAINT, self.on_paint)
         self.Bind(wx.EVT_ERASE_BACKGROUND, lambda event: None)
@@ -392,66 +360,59 @@ class NeonProgressBar(wx.Control):
             return
 
         width, height = self.GetClientSize()
+        radius = height / 2.0
 
         gc.SetPen(wx.TRANSPARENT_PEN)
-        gc.SetBrush(wx.Brush(wx.Colour(255, 255, 255, 18)))
-        gc.DrawRoundedRectangle(0, 1, width, height - 2, height / 2.0)
+        gc.SetBrush(wx.Brush(BORDER))
+        gc.DrawRoundedRectangle(0, 0, width, height, radius)
 
         if self.value > 0:
             filled = max(height, width * self.value / 100.0)
-            gc.SetBrush(gc.CreateLinearGradientBrush(0, 0, filled, 0, CYAN, MAGENTA))
-            gc.DrawRoundedRectangle(0, 1, filled, height - 2, height / 2.0)
+            gc.SetBrush(wx.Brush(ACCENT))
+            gc.DrawRoundedRectangle(0, 0, filled, height, radius)
         elif not self.idle:
-            # indeterminate sweep
             sweep = width / 3.0
             x = (width + sweep) * self.pulse_position / 140.0 - sweep
-            gc.SetBrush(gc.CreateLinearGradientBrush(x, 0, x + sweep, 0,
-                                                     wx.Colour(0, 229, 255, 0), CYAN))
-            gc.DrawRoundedRectangle(max(0, x), 1, min(sweep, width - max(0, x)), height - 2, height / 2.0)
+            gc.SetBrush(wx.Brush(ACCENT_SOFT))
+            gc.DrawRoundedRectangle(max(0, x), 0, min(sweep, width - max(0, x)), height, radius)
 
 
 # --------------------------------------------------------------------------
 # Installation progress dialog
 # --------------------------------------------------------------------------
 class InstallProgressDialog(wx.Dialog):
-    """Dark neon replacement for wx.ProgressDialog."""
+    """Clean modal progress dialog used by the CLI-style flows."""
 
     def __init__(self, parent, title, message, maximum=101):
         style = wx.DEFAULT_DIALOG_STYLE & ~wx.CLOSE_BOX & ~wx.MAXIMIZE_BOX
         super(InstallProgressDialog, self).__init__(parent, wx.ID_ANY, title, style=style)
-        self.SetBackgroundColour(CARD)
+        self.SetBackgroundColour(SURFACE)
         self.maximum = maximum
         self.cancelled = False
 
-        panel = Card(self, accent=CYAN)
-        panel.SetBackgroundColour(CARD)
         sizer = wx.BoxSizer(wx.VERTICAL)
 
-        self.title_label = wx.StaticText(panel, wx.ID_ANY, title.upper())
-        self.title_label.SetFont(FONTS["title"] or self.GetFont())
-        self.title_label.SetForegroundColour(CYAN)
-        sizer.Add(self.title_label, 0, wx.LEFT | wx.RIGHT | wx.TOP, 18)
+        self.title_label = wx.StaticText(self, wx.ID_ANY, title)
+        self.title_label.SetFont(ui_font("title", self))
+        self.title_label.SetForegroundColour(TEXT)
+        sizer.Add(self.title_label, 0, wx.LEFT | wx.RIGHT | wx.TOP, 20)
 
-        self.status_label = wx.StaticText(panel, wx.ID_ANY, message)
-        self.status_label.SetFont(FONTS["body"] or self.GetFont())
-        self.status_label.SetForegroundColour(TEXT)
-        sizer.Add(self.status_label, 0, wx.LEFT | wx.RIGHT | wx.TOP, 18)
+        self.status_label = wx.StaticText(self, wx.ID_ANY, message)
+        self.status_label.SetFont(ui_font("body", self))
+        self.status_label.SetForegroundColour(MUTED)
+        sizer.Add(self.status_label, 0, wx.LEFT | wx.RIGHT | wx.TOP, 20)
 
-        self.progress = NeonProgressBar(panel)
-        sizer.Add(self.progress, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 18)
+        self.progress = NeonProgressBar(self, background=SURFACE)
+        sizer.Add(self.progress, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 20)
 
         button_sizer = wx.BoxSizer(wx.HORIZONTAL)
         button_sizer.AddStretchSpacer(1)
-        self.cancel_button = NeonButton(panel, label="Cancel", accent=MAGENTA, min_size=(110, 36),
-                                        background=CARD)
-        button_sizer.Add(self.cancel_button, 0, wx.ALL, 18)
+        self.cancel_button = NeonButton(self, label="Cancel", min_size=(100, 32), background=SURFACE)
+        button_sizer.Add(self.cancel_button, 0, wx.ALL, 20)
         sizer.Add(button_sizer, 0, wx.EXPAND)
 
-        panel.SetSizer(sizer)
-        outer = wx.BoxSizer(wx.VERTICAL)
-        outer.Add(panel, 1, wx.EXPAND)
-        self.SetSizer(outer)
-        self.SetClientSize((520, 210))
+        self.SetSizer(sizer)
+        self.SetClientSize((520, 200))
 
         self.cancel_button.Bind(wx.EVT_BUTTON, self.on_cancel)
         self.Bind(wx.EVT_CLOSE, self.on_close)

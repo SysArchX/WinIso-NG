@@ -13,6 +13,7 @@ import WinIso.list_devices as list_devices
 import WinIso.miscellaneous as miscellaneous
 import WinIso.theme as theme
 import WinIso.utils as utils
+import WinIso.windows_backend as windows_backend
 
 data_directory = os.path.dirname(__file__) + "/data/"
 
@@ -48,39 +49,37 @@ class Hairline(wx.Panel):
 
     def on_paint(self, __=None):
         dc = wx.AutoBufferedPaintDC(self)
-        dc.SetBackground(wx.Brush(theme.BG_BOTTOM))
+        dc.SetBackground(wx.Brush(theme.SURFACE))
         dc.Clear()
         gc = wx.GraphicsContext.Create(dc)
         if gc is None:
             return
         width = self.GetClientSize().width
-        gc.SetPen(wx.Pen(theme.CYAN, 1))
-        gc.StrokeLine(0, 1, width * 0.25, 1)
-        gc.SetPen(wx.Pen(wx.Colour(theme.MAGENTA.Red(), theme.MAGENTA.Green(), theme.MAGENTA.Blue(), 90), 1))
-        gc.StrokeLine(width * 0.25, 1, width, 1)
+        gc.SetPen(wx.Pen(theme.BORDER, 1))
+        gc.StrokeLine(0, 1, width, 1)
 
 
-def section_label(parent, text, colour=theme.CYAN):
-    label = wx.StaticText(parent, wx.ID_ANY, text)
-    label.SetFont(theme.FONTS["small"] or parent.GetFont())
+def section_label(parent, text, colour=theme.MUTED):
+    label = wx.StaticText(parent, wx.ID_ANY, text.upper())
+    font = theme.ui_font("heading", parent)
+    label.SetFont(font)
     label.SetForegroundColour(colour)
     return label
 
 
 def form_label(parent, text):
     label = wx.StaticText(parent, wx.ID_ANY, text)
-    label.SetFont(theme.FONTS["body"] or parent.GetFont())
-    label.SetForegroundColour(theme.TEXT)
+    label.SetFont(theme.ui_font("body", parent))
+    label.SetForegroundColour(theme.MUTED)
     label.SetMinSize((LABEL_WIDTH, -1))
     return label
 
 
 def make_choice(parent, items, value=None, height=29):
     choice = wx.ComboBox(parent, wx.ID_ANY, choices=items, style=wx.CB_READONLY)
-    choice.SetBackgroundColour(theme.BG_TOP)
+    choice.SetBackgroundColour(theme.SURFACE)
     choice.SetForegroundColour(theme.TEXT)
-    if theme.FONTS["body"] is not None:
-        choice.SetFont(theme.FONTS["body"])
+    choice.SetFont(theme.ui_font("body", parent))
     choice.SetMinSize((-1, height))
     if value is not None and value in items:
         choice.SetStringSelection(value)
@@ -91,9 +90,8 @@ def make_checkbox(parent, label, value=False):
     checkbox = wx.CheckBox(parent, wx.ID_ANY, label)
     checkbox.SetValue(value)
     checkbox.SetForegroundColour(theme.TEXT)
-    checkbox.SetBackgroundColour(theme.BG_BOTTOM)
-    if theme.FONTS["body"] is not None:
-        checkbox.SetFont(theme.FONTS["body"])
+    checkbox.SetBackgroundColour(theme.SURFACE)
+    checkbox.SetFont(theme.ui_font("body", parent))
     return checkbox
 
 
@@ -108,10 +106,9 @@ class LabelField(wx.Panel):
         sizer_inner = wx.BoxSizer(wx.HORIZONTAL)
 
         self.text = wx.TextCtrl(self.frame, wx.ID_ANY, value, style=wx.BORDER_NONE)
-        self.text.SetBackgroundColour(theme.BG_TOP)
+        self.text.SetBackgroundColour(theme.SURFACE_ALT)
         self.text.SetForegroundColour(theme.TEXT)
-        if theme.FONTS["body"] is not None:
-            self.text.SetFont(theme.FONTS["body"])
+        self.text.SetFont(theme.ui_font("body", self))
         sizer_inner.Add(self.text, 1, wx.EXPAND | wx.ALL, 6)
         self.frame.SetSizer(sizer_inner)
 
@@ -251,7 +248,7 @@ class LogFrame(wx.Frame):
     def __init__(self, parent):
         super(LogFrame, self).__init__(parent, wx.ID_ANY, "WinIso-NG - " + _("Log"),
                                        size=wx.Size(680, 380))
-        self.SetBackgroundColour(theme.BG_BOTTOM)
+        self.SetBackgroundColour(theme.BG)
         self.SetIcon(wx.Icon(data_directory + "icon.ico"))
 
         panel = theme.TechBackground(self)
@@ -476,7 +473,7 @@ class MainFrame(wx.Frame):
     def __init__(self, title, pos, size, style=wx.DEFAULT_FRAME_STYLE):
         super(MainFrame, self).__init__(None, -1, title, pos, size, style)
 
-        self.SetBackgroundColour(theme.BG_BOTTOM)
+        self.SetBackgroundColour(theme.BG)
         self.SetIcon(wx.Icon(data_directory + "icon.ico"))
 
         file_menu = wx.Menu()
@@ -509,7 +506,7 @@ class MainFrame(wx.Frame):
 
         # Scrolling keeps every option reachable on small screens
         self.scroller = wx.ScrolledWindow(self, wx.ID_ANY, style=wx.VSCROLL)
-        self.scroller.SetBackgroundColour(theme.BG_BOTTOM)
+        self.scroller.SetBackgroundColour(theme.BG)
         self.scroller.SetScrollRate(0, 14)
 
         self.panel = MainPanel(self.scroller, wx.ID_ANY, frame=self)
@@ -548,6 +545,7 @@ class MainPanel(theme.TechBackground):
         self.log_frame = None
         self.log_buffer = []
         self.installing = False
+        self.dry_run = None
 
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -562,20 +560,19 @@ class MainPanel(theme.TechBackground):
 
         titles = wx.BoxSizer(wx.VERTICAL)
         title = wx.StaticText(self, wx.ID_ANY, "WinIso-NG")
-        if theme.FONTS["title"] is not None:
-            title.SetFont(theme.FONTS["title"])
-        title.SetForegroundColour(theme.CYAN)
+        title.SetFont(theme.ui_font("title", self))
+        title.SetForegroundColour(theme.TEXT)
         titles.Add(title, 0)
 
         subtitle = wx.StaticText(self, wx.ID_ANY, _("Create a bootable Windows USB installer"))
-        if theme.FONTS["small"] is not None:
-            subtitle.SetFont(theme.FONTS["small"])
+        subtitle.SetFont(theme.ui_font("body", self))
         subtitle.SetForegroundColour(theme.MUTED)
-        titles.Add(subtitle, 0, wx.TOP, 2)
+        titles.Add(subtitle, 0, wx.TOP, 1)
 
         header.Add(titles, 1, wx.ALIGN_CENTER_VERTICAL)
-        main_sizer.Add(header, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 8)
-        main_sizer.AddSpacer(8)
+        main_sizer.Add(header, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 20)
+        main_sizer.AddSpacer(10)
+        main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 20)
 
         # ------------------------------------------------------------- device
         main_sizer.Add(section_label(self, _("Device")), 0, wx.LEFT | wx.RIGHT | wx.TOP, 20)
@@ -592,11 +589,11 @@ class MainPanel(theme.TechBackground):
         add_grid_control(device_grid, self.list_hard_drives)
 
         main_sizer.Add(device_grid, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 20)
-        main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
+        main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
 
         # ------------------------------------------------------------- boot selection
-        main_sizer.Add(section_label(self, _("Boot selection"), theme.VIOLET), 0,
-                       wx.LEFT | wx.RIGHT | wx.TOP, 14)
+        main_sizer.Add(section_label(self, _("Boot selection")), 0,
+                       wx.LEFT | wx.RIGHT | wx.TOP, 10)
         main_sizer.AddSpacer(2)
 
         boot_grid = make_form_grid()
@@ -612,11 +609,11 @@ class MainPanel(theme.TechBackground):
         add_grid_row(boot_grid, self, _("Image option"), self.image_mode_choice)
 
         main_sizer.Add(boot_grid, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 20)
-        main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
+        main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
 
         # ------------------------------------------------------------- format options
-        main_sizer.Add(section_label(self, _("Format options"), theme.MAGENTA), 0,
-                       wx.LEFT | wx.RIGHT | wx.TOP, 14)
+        main_sizer.Add(section_label(self, _("Format options")), 0,
+                       wx.LEFT | wx.RIGHT | wx.TOP, 10)
         main_sizer.AddSpacer(2)
 
         format_grid = make_form_grid()
@@ -628,9 +625,14 @@ class MainPanel(theme.TechBackground):
             self, [_("BIOS (or UEFI-CSM)"), _("UEFI (non CSM)")], _("BIOS (or UEFI-CSM)"))
         add_grid_row(format_grid, self, _("Target system"), self.target_system_choice)
 
-        available = utils.supported_filesystems()
-        filesystems = [name for name in ("FAT", "NTFS", "EXFAT", "UDF") if available.get(name)]
-        self.missing_filesystems = [name for name in ("FAT", "NTFS", "EXFAT", "UDF") if not available.get(name)]
+        if windows_backend.available():
+            filesystems = ["FAT", "NTFS", "EXFAT"]
+            self.missing_filesystems = []
+        else:
+            available = utils.supported_filesystems()
+            filesystems = [name for name in ("FAT", "NTFS", "EXFAT", "UDF") if available.get(name)]
+            self.missing_filesystems = [name for name in ("FAT", "NTFS", "EXFAT", "UDF")
+                                        if not available.get(name)]
 
         self.filesystem_choice = make_choice(self, filesystems,
                                              "NTFS" if "NTFS" in filesystems else filesystems[0])
@@ -665,28 +667,41 @@ class MainPanel(theme.TechBackground):
         bypass_sizer.Add((LABEL_WIDTH - 10, 0))
         bypass_sizer.Add(self.win11_bypass, 1, wx.EXPAND)
         main_sizer.Add(bypass_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 20)
-        main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
+
+        # Windows only: every write is preceded by a reviewable plan
+        if windows_backend.available():
+            self.dry_run = make_checkbox(
+                self, _("Dry run (show every command, write nothing)"), False)
+            self.dry_run.SetToolTip(_(
+                "Prints the validated plan (diskpart script, robocopy command and checks) "
+                "without mounting anything, formatting the disk or copying files."))
+
+            dry_sizer = wx.BoxSizer(wx.HORIZONTAL)
+            dry_sizer.Add((LABEL_WIDTH - 10, 0))
+            dry_sizer.Add(self.dry_run, 1, wx.EXPAND)
+            main_sizer.Add(dry_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 20)
+
+        main_sizer.Add(Hairline(self), 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
 
         # ------------------------------------------------------------- status
-        main_sizer.AddSpacer(10)
+        main_sizer.AddSpacer(6)
 
         status_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         self.start_button = theme.NeonButton(self, label=_("Start"), accent=theme.MAGENTA, filled=True,
-                                             min_size=(210, 42))
+                                             min_size=(190, 36))
         status_sizer.Add(self.start_button, 0, wx.RIGHT, 10)
 
         self.cancel_button = theme.NeonButton(self, label=_("Cancel"), accent=theme.VIOLET,
-                                              min_size=(130, 42))
+                                              min_size=(110, 36))
         self.cancel_button.Enable(False)
         status_sizer.Add(self.cancel_button, 0)
 
         main_sizer.Add(status_sizer, 0, wx.ALIGN_RIGHT | wx.LEFT | wx.RIGHT, 18)
-        main_sizer.AddSpacer(6)
+        main_sizer.AddSpacer(4)
 
-        self.status_label = wx.StaticText(self, wx.ID_ANY, _("READY"))
-        if theme.FONTS["small"] is not None:
-            self.status_label.SetFont(theme.FONTS["small"])
+        self.status_label = wx.StaticText(self, wx.ID_ANY, _("Ready"))
+        self.status_label.SetFont(theme.ui_font("small", self))
         self.status_label.SetForegroundColour(theme.MUTED)
         main_sizer.Add(self.status_label, 0, wx.LEFT | wx.RIGHT, 20)
         main_sizer.AddSpacer(5)
@@ -724,7 +739,12 @@ class MainPanel(theme.TechBackground):
 
         self.device_choice.Clear()
 
-        for device, description in list_devices.usb_drive(show_all):
+        if windows_backend.available():
+            entries = windows_backend.list_removable_disks()
+        else:
+            entries = list_devices.usb_drive(show_all)
+
+        for device, description in entries:
             self.device_devices.append(device)
             self.device_choice.Append(description)
 
@@ -734,7 +754,8 @@ class MainPanel(theme.TechBackground):
             else:
                 self.device_choice.SetSelection(0)
         else:
-            self.device_choice.SetValue(_("No USB device found"))
+            self.device_choice.Append(_("No USB device found"))
+            self.device_choice.SetSelection(0)
 
         self.update_start_state()
 
@@ -882,8 +903,32 @@ class MainPanel(theme.TechBackground):
         self.refresh_devices()
 
     # ------------------------------------------------------------- install
+    def target_summary(self, device):
+        """Model, size and path of the selected device, on any platform."""
+        if windows_backend.available():
+            details = windows_backend.disk_details(device)
+            return _("Target device: Disk {0}\nModel: {1}\nSize: {2}\nPath: {3}").format(
+                device,
+                details.get("model") or _("unknown model"),
+                details.get("size") or _("unknown size"),
+                details.get("path") or _("unknown path"))
+
+        details = list_devices.device_details(device)
+        return _("Target device: {0}\nModel: {1}\nSize: {2}").format(
+            device,
+            details.get("model") or _("unknown model"),
+            details.get("size") or _("unknown size"))
+
     def on_start(self, __):
-        if os.getuid() != 0:
+        dry_run = bool(windows_backend.available() and self.dry_run is not None
+                       and self.dry_run.GetValue())
+
+        if windows_backend.available():
+            if not dry_run and not windows_backend.is_admin():
+                wx.MessageBox(_("WinIso-NG must run as administrator to write to a disk."), "WinIso-NG",
+                              wx.OK | wx.ICON_ERROR, self)
+                return
+        elif os.getuid() != 0:
             wx.MessageBox(_("WinIso-NG must run as root to write to a storage device."), "WinIso-NG",
                           wx.OK | wx.ICON_ERROR, self)
             return
@@ -903,19 +948,16 @@ class MainPanel(theme.TechBackground):
             return
 
         message = _("Are you sure? This will delete all your files and wipe out the selected device.")
+        message = self.target_summary(device) + "\n\n" + message
 
-        details = list_devices.device_details(device)
-        summary = _("Target device: {0}\nModel: {1}\nSize: {2}").format(
-            device,
-            details.get("model") or _("unknown model"),
-            details.get("size") or _("unknown size"))
+        if dry_run:
+            message = self.target_summary(device) + "\n\n" + _(
+                "Dry run: the whole plan is listed in the log and nothing is written.")
 
-        message = summary + "\n\n" + message
-
-        if self.win11_bypass.GetValue() and image_mode != "NONE":
+        if not dry_run and self.win11_bypass.GetValue() and image_mode != "NONE":
             message += "\n\n" + _("An autounattend.xml with the Windows 11 bypass will be written to the target.")
 
-        if self.bad_blocks.GetValue():
+        if self.bad_blocks.GetValue() and not dry_run:
             message += "\n\n" + _("The bad blocks check also destroys all data on the device.")
 
         if wx.MessageBox(message, _("Confirm target device"),
@@ -924,19 +966,37 @@ class MainPanel(theme.TechBackground):
 
         filesystem = self.filesystem_choice.GetValue()
 
-        self.handler = WinIso_handler(
-            source=self.image_path,
-            target=device,
-            filesystem=filesystem,
-            label=self.label_field.GetValue(),
-            partition_scheme=self.scheme_choice.GetValue(),
-            target_system="UEFI" if self.target_system_choice.GetValue() == _("UEFI (non CSM)") else "BIOS",
-            image_mode=image_mode,
-            cluster_size=self.cluster_choice.GetValue(),
-            quick_format=self.quick_format.GetValue(),
-            bad_blocks_check=self.bad_blocks.GetValue(),
-            skip_legacy_bootloader=self.__parent.options_skip_grub.IsChecked(),
-            win11_bypass=self.win11_bypass.GetValue())
+        if windows_backend.available():
+            if image_mode == "DD":
+                wx.MessageBox(_("DD image mode is only available on Linux. Choose Standard (copy files)."),
+                              "WinIso-NG", wx.OK | wx.ICON_INFORMATION, self)
+                return
+
+            self.handler = windows_backend.WindowsJob(
+                image_path=self.image_path,
+                disk_number=int(device),
+                filesystem=filesystem,
+                label=self.label_field.GetValue(),
+                win11_bypass=self.win11_bypass.GetValue(),
+                dry_run=dry_run,
+                partition_scheme=self.scheme_choice.GetValue(),
+                target_system="UEFI" if self.target_system_choice.GetValue() == _("UEFI (non CSM)") else "BIOS",
+                quick_format=self.quick_format.GetValue(),
+                cluster_size=self.cluster_choice.GetValue())
+        else:
+            self.handler = WinIso_handler(
+                source=self.image_path,
+                target=device,
+                filesystem=filesystem,
+                label=self.label_field.GetValue(),
+                partition_scheme=self.scheme_choice.GetValue(),
+                target_system="UEFI" if self.target_system_choice.GetValue() == _("UEFI (non CSM)") else "BIOS",
+                image_mode=image_mode,
+                cluster_size=self.cluster_choice.GetValue(),
+                quick_format=self.quick_format.GetValue(),
+                bad_blocks_check=self.bad_blocks.GetValue(),
+                skip_legacy_bootloader=self.__parent.options_skip_grub.IsChecked(),
+                win11_bypass=self.win11_bypass.GetValue())
 
         self.handler.log_sink = self.append_log
 
@@ -956,11 +1016,16 @@ class MainPanel(theme.TechBackground):
     def set_installing(self, installing):
         self.installing = installing
 
-        for control in (self.device_choice, self.boot_choice, self.image_mode_choice, self.select_button,
-                        self.checksum_button, self.scheme_choice, self.target_system_choice,
-                        self.filesystem_choice, self.cluster_choice, self.label_field,
-                        self.quick_format, self.bad_blocks, self.list_hard_drives,
-                        self.win11_bypass):
+        controls = [self.device_choice, self.boot_choice, self.image_mode_choice, self.select_button,
+                    self.checksum_button, self.scheme_choice, self.target_system_choice,
+                    self.filesystem_choice, self.cluster_choice, self.label_field,
+                    self.quick_format, self.bad_blocks, self.list_hard_drives,
+                    self.win11_bypass]
+
+        if self.dry_run is not None:
+            controls.append(self.dry_run)
+
+        for control in controls:
             control.Enable(not installing)
 
         if not installing:
@@ -995,6 +1060,11 @@ class MainPanel(theme.TechBackground):
                           wx.OK | wx.ICON_ERROR, self)
         elif self.handler.kill:
             self.status_label.SetLabel(_("CANCELLED"))
+        elif getattr(self.handler, "dry_run", False):
+            self.status_label.SetLabel(_("DRY RUN DONE"))
+            self.append_log(_("Dry run finished: nothing was written."))
+            wx.MessageBox(_("Dry run finished: nothing was written. The plan is in the log."),
+                          _("Dry run"), wx.OK | wx.ICON_INFORMATION, self)
         else:
             self.status_label.SetLabel(_("DONE"))
             self.append_log(_("Installation succeeded!"))
@@ -1005,7 +1075,7 @@ class MainPanel(theme.TechBackground):
 
 
 def run():
-    frame = MainFrame("WinIso-NG", wx.DefaultPosition, wx.Size(760, 730))
+    frame = MainFrame("WinIso-NG", wx.DefaultPosition, wx.Size(780, 726))
     frame.SetMinSize(wx.Size(680, 520))
 
     frame.Show(True)

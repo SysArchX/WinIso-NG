@@ -24,8 +24,8 @@ Suggests: mtools
 Description: create bootable Windows and Linux USB installers (Rufus-style GUI)
  WinIso-NG writes ISO or IMG images to a USB storage device, creating a
  bootable Windows installer (or any other bootable image) from the Linux
- desktop. It is a fork of WoeUSB-ng with a Rufus-inspired form and a dark
- neon interface.
+ desktop. It is a fork of WoeUSB-ng with a clean, professional interface
+ and the same workflow you know from Rufus.
  .
  Features:
   * Disk or ISO image, DD raw image mode and non-bootable (format only) modes
@@ -40,4 +40,4 @@ Description: create bootable Windows and Linux USB installers (Rufus-style GUI)
     written as autounattend.xml on the installation partition
   * Host disk protection: /, /boot, /boot/efi, /home and swap disks are always
     hidden from the device list
-  * Live log window and inline progress reporting
+  * Clean light interface with a disc logo, live log window and inline progress

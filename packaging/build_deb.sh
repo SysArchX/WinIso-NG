@@ -62,7 +62,7 @@ cp COPYING "$STAGE/usr/share/doc/$PKG/"
 cat > "$STAGE/usr/share/doc/$PKG/changelog" <<EOF
 winiso-ng (${VERSION}) unstable; urgency=medium
 
-  * Rufus-style interface with the WinIso-NG neon theme.
+  * New clean, professional interface and a disc logo.
   * Windows 11 compatibility bypass (TPM, Secure Boot, RAM and local account)
     through a generated autounattend.xml.
   * Automatic splitting of install.wim into .swm parts with wimlib-imagex, so
@@ -70,6 +70,9 @@ winiso-ng (${VERSION}) unstable; urgency=medium
   * Host disk protection: disks backing /, /boot, /boot/efi, /home or swap are
     always hidden, even with "List USB Hard Drives" enabled.
   * Target confirmation dialog showing model, size and device path.
+  * Windows backend: diskpart + robocopy + optional wimlib and bootsect, with
+    a reviewable plan and a dry run (--dry-run, or the GUI checkbox) that
+    prints every command and refuses unsafe targets before anything is touched.
   * Adds DD image mode, non-bootable format mode, GPT partition tables,
     exFAT/UDF filesystems, cluster size selection, bad blocks check and
     MD5/SHA-1/SHA-256/SHA-512 image checksums.
